@@ -69,6 +69,7 @@ export type CrashReportCreateInput = Omit<
 export type ReactErrorBoundarySurface =
   | 'app-root'
   | 'web-root'
+  | 'single-session-root'
   | 'workspace-shell'
   | 'sidebar'
   | 'terminal-workbench'

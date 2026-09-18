@@ -114,9 +114,14 @@ export const MessageRow = memo(function MessageRow({
   if (isUser) {
     return (
       <div ref={rowRef} className="group relative flex flex-col items-end gap-0.5">
-        {/* User turns get a distinct muted fill (not the card/canvas color) so
-            the prompt reads apart from the assistant's body copy. */}
-        <div className="max-w-[85%] rounded-lg rounded-tr-sm bg-muted px-3.5 py-2.5 text-sm text-foreground">
+        {/* iMessage-style sent-blue: a solid fill, not a wash, so it reads as
+            its own distinct color rather than a tint of the page. White body
+            text needs >=4.5:1 here, which is why --user-message-accent is
+            pinned to one fixed, pre-checked blue rather than a per-theme
+            token — see main.css. CommentMarkdown's own `a`/`code`/`pre`/
+            `blockquote` colors assume a neutral page-toned background, so
+            they're retargeted below for contrast against the blue fill. */}
+        <div className="max-w-[85%] rounded-lg rounded-tr-sm bg-user-message-accent px-3.5 py-2.5 text-sm text-white [&_a]:text-white [&_a:hover]:text-white/80 [&_blockquote]:border-white/40 [&_blockquote]:text-white/85 [&_code]:bg-white/15 [&_code]:text-white [&_hr]:border-white/30 [&_pre]:bg-white/10">
           {markdown ? (
             <>
               <NativeChatImageAttachments
@@ -161,17 +166,12 @@ export const MessageRow = memo(function MessageRow({
   // Plain assistant prose is the copyable unit; reasoning/system asides stay
   // chrome-free. Controls reveal on hover/keyboard focus and stay visible on touch.
   const showControls = !isReasoning && !isSystem && markdown.length > 0
+  // Reasoning/system stay chrome-free asides (de-emphasized, not a conversational
+  // turn); every other role reads as a lifted card, same family as the user bubble.
+  const isBubbled = !isReasoning && !isSystem
 
-  return (
-    <div
-      ref={rowRef}
-      className={cn(
-        'group relative max-w-full select-text text-sm leading-relaxed text-foreground',
-        // Reasoning is the agent thinking aloud — quieter, italic, like an aside.
-        isReasoning && 'border-l-2 border-border/60 pl-3 italic text-muted-foreground',
-        isSystem && 'text-xs text-muted-foreground'
-      )}
-    >
+  const content = (
+    <>
       <NativeChatImageAttachments
         blocks={prose}
         runtimeContext={runtimeContext}
@@ -188,6 +188,30 @@ export const MessageRow = memo(function MessageRow({
           linkifyFilePaths={onLinkClick !== undefined}
         />
       ) : null}
+    </>
+  )
+
+  return (
+    <div
+      ref={rowRef}
+      className={cn(
+        'group relative max-w-full select-text text-sm leading-relaxed text-foreground',
+        // Reasoning is the agent thinking aloud — quieter, italic, like an aside.
+        isReasoning && 'border-l-2 border-border/60 pl-3 italic text-muted-foreground',
+        isSystem && 'text-xs text-muted-foreground'
+      )}
+    >
+      {isBubbled ? (
+        // A quiet wash of --ai-action-accent (the app's existing "this is the AI"
+        // hue, per STYLEGUIDE's color-mix-not-hardcoded-hex rule) instead of a flat
+        // card fill, which read as nearly invisible against --card in light mode —
+        // this reads as a distinct color from the user's neutral muted fill.
+        <div className="max-w-[85%] rounded-lg rounded-tl-sm border border-[color:color-mix(in_srgb,var(--ai-action-accent)_22%,transparent)] bg-[color:color-mix(in_srgb,var(--ai-action-accent)_9%,var(--card))] px-3.5 py-2.5">
+          {content}
+        </div>
+      ) : (
+        content
+      )}
       {tools.length > 0 || subagentGroups.length > 0 || backgroundTasks.length > 0 ? (
         <NativeChatToolRun
           blocks={tools}

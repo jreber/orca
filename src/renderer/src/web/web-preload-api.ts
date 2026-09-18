@@ -54,7 +54,12 @@ import { createWorktreesApi } from './preload-api/web-worktrees-api'
 import { readStoredWebRuntimeEnvironment } from './web-runtime-environment'
 
 export function installWebPreloadApi(): void {
-  webRuntimeState.activeEnvironment = readStoredWebRuntimeEnvironment()
+  // Nullish, not unconditional: a caller (the single-session embed) may have
+  // already registered an ephemeral environment before this runs, and that
+  // in-memory environment never round-trips through storage, so overwriting
+  // it here would silently strand the caller with no active environment.
+  webRuntimeState.activeEnvironment =
+    webRuntimeState.activeEnvironment ?? readStoredWebRuntimeEnvironment()
   const webWindow = window as unknown as { __ORCA_WEB_CLIENT__?: boolean }
   webWindow.__ORCA_WEB_CLIENT__ = true
   window.api = withFallback(createWebPreloadApi(), []) as PreloadApi

@@ -75,6 +75,22 @@ export const manuallyDisconnectedEnvironmentIds = new Set<string>()
 
 export const runtimeCallQueuePool = new RuntimeRpcCallQueuePool()
 
+/** Ids of environments registered via {@link registerEphemeralWebRuntimeEnvironment}.
+ *  Any later update to these environments (e.g. a freshly-learned runtimeId or
+ *  pairedDeviceId from an RPC response) must stay in memory only. */
+const ephemeralEnvironmentIds = new Set<string>()
+
+/** Registers an environment as active in memory only, without persisting it to
+ *  localStorage. Used by one-shot embeds (e.g. the single-session web embed)
+ *  that must not contaminate the full web client's saved, reconnect-on-reload
+ *  environment. */
+export function registerEphemeralWebRuntimeEnvironment(
+  environment: StoredWebRuntimeEnvironment
+): void {
+  ephemeralEnvironmentIds.add(environment.id)
+  webRuntimeState.activeEnvironment = environment
+}
+
 export function invalidateRuntimeWorktreeCaches(): void {
   webRuntimeState.cachedWorktrees = null
   webRuntimeState.cachedDetectedWorktrees = null
@@ -189,6 +205,18 @@ export function updateEnvironmentFromResponse(
     typeof (response.result as { pairedDeviceId?: unknown }).pairedDeviceId === 'string'
       ? (response.result as { pairedDeviceId: string }).pairedDeviceId
       : undefined
+  if (ephemeralEnvironmentIds.has(environment.id)) {
+    // Update the live in-memory environment (so the connection keeps working)
+    // without persisting it to the shared localStorage key.
+    webRuntimeState.activeEnvironment = {
+      ...environment,
+      runtimeId,
+      ...(pairedDeviceId ? { pairedDeviceId } : {}),
+      updatedAt: Date.now(),
+      lastUsedAt: Date.now()
+    }
+    return
+  }
   webRuntimeState.activeEnvironment = updateStoredEnvironmentRuntimeId(
     environment,
     runtimeId,

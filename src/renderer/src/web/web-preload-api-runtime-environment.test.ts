@@ -33,6 +33,29 @@ describe('web runtime environment identity', () => {
     ).rejects.toThrow('Unknown Orca runtime environment: web-server-a')
   })
 
+  it('does not clobber an already-registered ephemeral environment on install (single-session embed)', async () => {
+    // Reproduces the single-session embed's real mount order: SingleSessionApp
+    // registers an ephemeral environment (useMemo) before installWebPreloadApi()
+    // runs (useEffect). With no stored environment in localStorage — the normal
+    // case for a fresh webview partition — installWebPreloadApi() must not
+    // overwrite the environment that was just registered.
+    installBrowserGlobals('Linux')
+    const { installWebPreloadApi } = await import('./web-preload-api')
+    const { registerEphemeralWebRuntimeEnvironment, webRuntimeState } =
+      await import('./preload-api/web-runtime-session')
+    const { createStoredWebRuntimeEnvironment } = await import('./web-runtime-environment')
+
+    const environment = createStoredWebRuntimeEnvironment({
+      name: 'Embedded session',
+      offer: { v: 2, endpoint: 'wss://x', deviceToken: 't', publicKeyB64: 'a2V5' }
+    })
+    registerEphemeralWebRuntimeEnvironment(environment)
+
+    installWebPreloadApi()
+
+    expect(webRuntimeState.activeEnvironment?.id).toBe(environment.id)
+  })
+
   it('keeps pairing state separate from generic Active Server settings writes', async () => {
     const globals = installBrowserGlobals('Linux')
     const { installWebPreloadApi } = await import('./web-preload-api')

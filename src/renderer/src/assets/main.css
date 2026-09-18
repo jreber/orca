@@ -101,6 +101,7 @@
   --color-terminal-pane-title-on-light-input-bg: var(--terminal-pane-title-on-light-input-bg);
   --color-terminal-pane-title-on-light-separator: var(--terminal-pane-title-on-light-separator);
   --color-ai-action-accent: var(--ai-action-accent);
+  --color-user-message-accent: var(--user-message-accent);
   --color-status-success: var(--status-success);
   --color-status-success-background: var(--status-success-background);
   --color-status-success-border: var(--status-success-border);
@@ -176,6 +177,11 @@
   --ring: #a1a1a1;
   --terminal-pane-locate: var(--color-blue-600);
   --ai-action-accent: var(--color-violet-500);
+  /* "This bubble is mine" — the classic iMessage sent-blue. Same hex in both
+     themes (unlike a text/icon accent, a solid chat-bubble fill doesn't need
+     to shift for background luminance) and chosen to stay >=4.5:1 with white
+     body text at this exact value. */
+  --user-message-accent: var(--color-blue-600);
   /* "An agent is asking you something" — one hue for every surface that shows
      it (sidebar, tabs, dashboard, kanban). Orange, not amber: it has to stay
      separable from working-yellow at a glance. */
@@ -294,6 +300,7 @@
   --ring: #737373;
   --terminal-pane-locate: var(--color-blue-400);
   --ai-action-accent: var(--color-violet-400);
+  --user-message-accent: var(--color-blue-600);
   --agent-question: var(--color-orange-500);
   --agent-question-text: var(--color-orange-300);
   --status-success: #86efac;
