@@ -8,6 +8,10 @@ import type {
 } from '../../../../shared/native-chat-session-options'
 import { clearNativeChatSessionOptionCacheForTests } from './native-chat-session-option-cache'
 import { clearNativeChatModelEnrichmentForTests } from './native-chat-session-option-enrichment'
+import {
+  addNativeChatAnnotation,
+  clearNativeChatAnnotationQueueForTests
+} from './native-chat-annotation-queue'
 
 const mocks = vi.hoisted(() => ({
   cancelPendingSends: vi.fn(),
@@ -221,7 +225,10 @@ describe('NativeChatComposer', () => {
     })
   })
 
-  afterEach(() => cleanup())
+  afterEach(() => {
+    cleanup()
+    clearNativeChatAnnotationQueueForTests()
+  })
 
   it('cancels delayed composer writes before the Stop button interrupts the agent', () => {
     const onStop = vi.fn()
@@ -404,6 +411,21 @@ describe('NativeChatComposer', () => {
     expect(mocks.sendNativeChatMessage).not.toHaveBeenCalled()
     expect(mocks.sendNativeChatTypedCommand).not.toHaveBeenCalled()
     expect(mocks.sendNativeChatMessageWithImageAttachments).not.toHaveBeenCalled()
+  })
+
+  it('enables Send for a pending annotation even with no typed draft', () => {
+    mocks.draft = ''
+    addNativeChatAnnotation('tab-1:leaf-1', 'quoted text', 'a note')
+    render(
+      <NativeChatComposer
+        terminalTabId="tab-1"
+        paneKey="tab-1:leaf-1"
+        targetPtyId="pty-1"
+        agent="codex"
+      />
+    )
+
+    expect(mocks.fieldProps?.sendButtonDisabled).toBe(false)
   })
 
   it('enables Send and dispatches once a pending attachment resolves', () => {

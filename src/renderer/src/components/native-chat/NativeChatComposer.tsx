@@ -2,8 +2,7 @@ import type { NativeChatComposerInput } from './native-chat-composer-input'
 import { forwardRef, useCallback, useImperativeHandle, useState } from 'react'
 import { useAppStore } from '../../store'
 import { useNativeChatComposerAnnotations } from './use-native-chat-composer-annotations'
-import { sendRuntimePtyInput } from '@/runtime/runtime-terminal-inspection'
-import { getSettingsForAgentTabRuntimeOwner } from '@/lib/agent-paste-draft'
+import { useNativeChatComposerInterrupt } from './use-native-chat-composer-interrupt'
 import {
   applyMentionSuggestion,
   EMPTY_HISTORY,
@@ -12,7 +11,6 @@ import {
 import { useNativeChatDraft } from './use-native-chat-draft'
 import { useNativeChatLaunchDraftAdoption } from './use-native-chat-launch-draft-adoption'
 import { NativeChatComposerField } from './NativeChatComposerField'
-import type { NativeChatResolvedTarget } from './native-chat-composer-target'
 import { useNativeChatComposerAttachments } from './use-native-chat-composer-attachments'
 import { useNativeChatComposerPaste } from './use-native-chat-composer-paste'
 import { useNativeChatExternalAttachments } from './use-native-chat-external-attachments'
@@ -40,12 +38,6 @@ export type {
   NativeChatComposerHandle,
   NativeChatComposerProps
 } from './native-chat-composer-types'
-
-// Why: a plain ESC byte is what the agent TUIs read as the interrupt key over a
-// PTY (matching how xterm forwards Escape). The richer interrupt-intent
-// inference (agent-interrupt-intent.ts) is driven by the existing PTY input
-// observers, so writing ESC through the same send path feeds that machinery.
-const ESC = '\x1b'
 
 /**
  * Rich native input for the chat view. Sends prompts into the running agent
@@ -139,14 +131,13 @@ const NativeChatComposerPane = forwardRef<NativeChatComposerHandle, NativeChatCo
       handleDraftOrCaretChange
     } = picker
 
-    // Resolve the live ptyId for this chat leaf; runtime owner settings route
-    // local vs remote (SSH) sends.
-    const resolveTarget = useCallback((): NativeChatResolvedTarget | null => {
-      if (!targetPtyId) {
-        return null
-      }
-      return { ptyId: targetPtyId, settings: getSettingsForAgentTabRuntimeOwner(terminalTabId) }
-    }, [targetPtyId, terminalTabId])
+    const { resolveTarget, interrupt } = useNativeChatComposerInterrupt({
+      targetPtyId,
+      terminalTabId,
+      isWorking,
+      onStop,
+      cancelPendingSends
+    })
 
     const [hasPty, disabled] = structuredTransport
       ? [true, !canSend]
@@ -190,7 +181,9 @@ const NativeChatComposerPane = forwardRef<NativeChatComposerHandle, NativeChatCo
     const hasPendingAttachment = imageAttachments.some((attachment) => attachment.pending)
     const sendButtonDisabled = isWorking
       ? !hasPty || !onStop
-      : disabled || hasPendingAttachment || (draft.trim() === '' && imageAttachments.length === 0)
+      : disabled ||
+        hasPendingAttachment ||
+        (draftWithAnnotations.trim() === '' && imageAttachments.length === 0)
 
     const { insertTypedText, focus } = useNativeChatTypedInsertion({
       textareaRef,
@@ -314,18 +307,6 @@ const NativeChatComposerPane = forwardRef<NativeChatComposerHandle, NativeChatCo
       sendStructured,
       structuredTransport
     ])
-
-    const interrupt = useCallback(() => {
-      cancelPendingSends()
-      if (isWorking && onStop) {
-        onStop()
-        return
-      }
-      const target = resolveTarget()
-      if (target) {
-        sendRuntimePtyInput(target.settings, target.ptyId, ESC)
-      }
-    }, [cancelPendingSends, isWorking, onStop, resolveTarget])
 
     const dispatchPtyPickerCommand = useNativeChatPickerCommandDispatch({
       agent,
