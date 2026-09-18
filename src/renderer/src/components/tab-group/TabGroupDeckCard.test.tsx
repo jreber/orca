@@ -107,4 +107,35 @@ describe('TabGroupDeckCard', () => {
       'border-[color-mix(in_srgb,var(--foreground)_60%,var(--card))]'
     )
   })
+
+  // Why: Task 4 passes each card its own tab's worktree id (not a fixed
+  // panel worktree), so every store read here must key off the `worktreeId`
+  // prop — verifies no stale closed-over panel worktree id slipped in.
+  it("reads unread state from the card's own worktreeId prop, not a fixed panel worktree", () => {
+    useAppStore.setState({
+      tabsByWorktree: {
+        wtA: [{ ...terminalTabStoreEntry, id: 'tabA1', worktreeId: 'wtA' }],
+        wtB: [{ ...terminalTabStoreEntry, id: 'tabB1', worktreeId: 'wtB' }]
+      },
+      unreadTerminalTabs: { tabB1: true }
+    })
+
+    const { container } = render(
+      <TooltipProvider>
+        <TabGroupDeckCard
+          worktreeId="wtB"
+          tab={{ ...terminalTab, id: 'tab-b', entityId: 'tabB1', worktreeId: 'wtB' }}
+          isActive={false}
+          onActivate={() => {}}
+        />
+      </TooltipProvider>
+    )
+
+    const card = container.querySelector('[data-tab-group-deck-card-id="tab-b"]')
+    expect(card).not.toBeNull()
+    // hasUnread=true for tabB1 flows into the attention badge only when the
+    // card resolves terminalTab from tabsByWorktree['wtB'] (the prop), not
+    // some other worktree — proving the read is prop-scoped.
+    expect(card?.getAttribute('data-tab-group-deck-card-state')).toBe('permission')
+  })
 })

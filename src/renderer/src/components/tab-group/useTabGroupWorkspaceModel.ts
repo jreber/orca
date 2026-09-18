@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import type { BrowserTab as BrowserTabState } from '../../../../shared/browser-workspace-types'
 import type { Tab, TabGroup } from '../../../../shared/tab-types'
@@ -8,7 +9,11 @@ import { useTabGroupTabCloseCommands } from './useTabGroupTabCloseCommands'
 import { useTabGroupCloseScopeCommands } from './useTabGroupCloseScopeCommands'
 import { useTabGroupActivationCommands } from './useTabGroupActivationCommands'
 import { useTabGroupCreationCommands } from './useTabGroupCreationCommands'
+import { computeGlobalDeckTabs } from './tab-group-tab-strip-order'
 
+const EMPTY_WORKTREES_BY_REPO: NonNullable<
+  ReturnType<typeof useAppStore.getState>['worktreesByRepo']
+> = {}
 const EMPTY_GROUPS: readonly TabGroup[] = []
 const EMPTY_UNIFIED_TABS: readonly Tab[] = []
 const EMPTY_BROWSER_TABS: readonly BrowserTabState[] = []
@@ -83,6 +88,25 @@ export function useTabGroupWorkspaceModel({
 
   const creationCommands = useTabGroupCreationCommands({ groupId, worktreeId, worktreeState })
 
+  const worktreesByRepo = useAppStore((state) => state.worktreesByRepo) ?? EMPTY_WORKTREES_BY_REPO
+  const unifiedTabsByWorktree = useAppStore((state) => state.unifiedTabsByWorktree)
+
+  // Why: global deck — every worktree across every project/repo, not just the
+  // active worktree's own project. Order is fixed by worktreesByRepo (project/
+  // repo order), never by which worktree happens to be active — selecting a
+  // card must not reshuffle the rail.
+  const deckTabs = useMemo(
+    () =>
+      computeGlobalDeckTabs(
+        worktreeId,
+        groupId,
+        group?.tabOrder,
+        worktreesByRepo,
+        unifiedTabsByWorktree
+      ),
+    [worktreesByRepo, worktreeId, groupId, unifiedTabsByWorktree, group?.tabOrder]
+  )
+
   return {
     group,
     activeTab,
@@ -92,6 +116,7 @@ export function useTabGroupWorkspaceModel({
     terminalTabs,
     tabBarOrder,
     groupTabs,
+    deckTabs,
     expandedPaneByTabId: worktreeState.expandedPaneByTabId,
     commands: {
       focusGroup: () => {

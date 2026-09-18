@@ -11,6 +11,7 @@ export function createTerminalEphemeralActions(
   | 'markDefaultTerminalTabsApplied'
   | 'setHydrationSucceeded'
   | 'togglePaneCardDeck'
+  | 'setPaneCardDeck'
   | 'setTabGroupDeckWidth'
   | 'setRecentQuickCommandForGroup'
   | 'claimAutomaticAgentResume'
@@ -54,6 +55,19 @@ export function createTerminalEphemeralActions(
           paneCardDeckByWorktree: {
             ...s.paneCardDeckByWorktree,
             [worktreeId]: s.paneCardDeckByWorktree[worktreeId] !== true
+          }
+        }
+      })
+    },
+    setPaneCardDeck: (worktreeId, active) => {
+      set((s) => {
+        if (!s.layoutByWorktree[worktreeId] || s.paneCardDeckByWorktree[worktreeId] === active) {
+          return {}
+        }
+        return {
+          paneCardDeckByWorktree: {
+            ...s.paneCardDeckByWorktree,
+            [worktreeId]: active
           }
         }
       })

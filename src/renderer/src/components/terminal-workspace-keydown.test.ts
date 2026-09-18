@@ -12,6 +12,7 @@ import {
 } from './editor/editor-autosave'
 import { handleTerminalWorkspaceKeyDown } from './terminal-workspace-keydown'
 import type { TerminalActivationController } from './use-terminal-activation-actions'
+import { activateWorktreeFromSidebar } from '@/lib/sidebar-worktree-activation'
 
 const mocks = vi.hoisted(() => ({
   state: {} as Record<string, unknown>,
@@ -74,6 +75,9 @@ vi.mock('@/runtime/browser-workspace-tab-close', () => ({
   closeBrowserWorkspaceTabOnHosts: () => ({ closesLocally: true, removesVisibleTab: true })
 }))
 vi.mock('../store/slices/browser-webview-cleanup', () => ({ destroyWorkspaceWebviews: vi.fn() }))
+vi.mock('@/lib/sidebar-worktree-activation', () => ({
+  activateWorktreeFromSidebar: vi.fn().mockResolvedValue(undefined)
+}))
 
 const controller = {
   activeWorktreeId: 'repo-1::/repo/worktree',
@@ -359,6 +363,13 @@ describe('card deck shortcuts', () => {
       groupsByWorktree: {
         [worktreeId]: [{ id: 'left-group', activeTabId: 'tab-left-a' }]
       },
+      // Why: the rotation chords pool cards via computeGlobalDeckTabs, which
+      // enumerates worktrees from worktreesByRepo (not unifiedTabsByWorktree
+      // directly) — the active worktree must be listed here or its own tabs
+      // silently drop out of the pool.
+      worktreesByRepo: {
+        'repo-1': [{ id: worktreeId, repoId: 'repo-1' }]
+      },
       unifiedTabsByWorktree: {
         [worktreeId]: [
           { id: 'tab-left-a', entityId: 'term-a', groupId: 'left-group', contentType: 'terminal' },
@@ -421,5 +432,46 @@ describe('card deck shortcuts', () => {
     const event = press('PageDown', { metaKey: true, shiftKey: true })
     expect(event.defaultPrevented).toBe(false)
     expect(mocks.state.activateTab).not.toHaveBeenCalled()
+  })
+
+  it("rotating onto a foreign-worktree card switches worktree and focuses that card's own group", async () => {
+    const setPaneCardDeck = vi.fn()
+    mocks.state = {
+      ...mocks.state,
+      setPaneCardDeck,
+      groupsByWorktree: {
+        [worktreeId]: [{ id: 'left-group', activeTabId: 'tab-left-c' }]
+      },
+      worktreesByRepo: {
+        'repo-1': [
+          { id: worktreeId, repoId: 'repo-1' },
+          { id: 'other-worktree', repoId: 'repo-1' }
+        ]
+      },
+      unifiedTabsByWorktree: {
+        ...(mocks.state.unifiedTabsByWorktree as Record<string, unknown>),
+        'other-worktree': [
+          {
+            id: 'tab-other',
+            entityId: 'term-other',
+            groupId: 'other-group',
+            contentType: 'terminal'
+          }
+        ]
+      }
+    }
+
+    const event = press('PageDown', { metaKey: true, shiftKey: true })
+    expect(event.defaultPrevented).toBe(true)
+    expect(setPaneCardDeck).toHaveBeenCalledWith('other-worktree', true)
+    await vi.waitFor(() =>
+      expect(activateWorktreeFromSidebar).toHaveBeenCalledWith('other-worktree')
+    )
+    await vi.waitFor(() => expect(mocks.state.focusGroup).toHaveBeenCalled())
+    // Why: 'other-group' (the pooled tab's own group), never this pane's
+    // 'left-group' — passing 'left-group' would corrupt other-worktree's
+    // activeGroupIdByWorktree with a group id it doesn't own.
+    expect(mocks.state.focusGroup).toHaveBeenCalledWith('other-worktree', 'other-group')
+    expect(mocks.state.activateTab).toHaveBeenCalledWith('tab-other')
   })
 })

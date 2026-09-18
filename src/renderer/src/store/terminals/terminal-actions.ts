@@ -52,6 +52,7 @@ export type TerminalActions = {
   markDefaultTerminalTabsApplied: (worktreeId: string) => void
   setHydrationSucceeded: (value: boolean) => void
   togglePaneCardDeck: (worktreeId: string) => void
+  setPaneCardDeck: (worktreeId: string, active: boolean) => void
   setTabGroupDeckWidth: (width: number | null) => void
   consumePendingSnapshot: (ptyId: string) => {
     snapshot: string

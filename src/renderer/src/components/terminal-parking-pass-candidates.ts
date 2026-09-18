@@ -1,10 +1,12 @@
 import type { TerminalTab } from '../../../shared/terminal-tab-types'
+import { useAppStore } from '../store'
 import {
   TERMINAL_WORKTREE_COLD_PARK_DELAY_MS,
   canParkTerminalWorktreeRenderers,
   selectColdParkedTerminalWorktrees,
   type TerminalWorktreeColdParkCandidate
 } from './terminal-pane/terminal-hidden-view-parking'
+import { getDeckModeParkingExemptWorktreeIds } from './terminal-pane/deck-mode-parking-exemption'
 import { getTerminalParkingPolicyOverrides } from './terminal-pane/terminal-parking-e2e-overrides'
 import { canWatcherCoverParkedTerminalTab } from './terminal-pane/terminal-parked-tab-watchers'
 import type { TerminalParkingFoundation } from './use-terminal-parking-foundation'
@@ -39,6 +41,13 @@ export function collectTerminalParkingPassCandidates(controller: TerminalParking
   const nowMs = Date.now()
   const overrides = getTerminalParkingPolicyOverrides()
   const portalWorktreeIds = new Set(activityTerminalPortals.map((portal) => portal.worktreeId))
+  const storeState = useAppStore.getState()
+  const deckModeExemptWorktreeIds = getDeckModeParkingExemptWorktreeIds({
+    deckModeActiveWorktreeIds: Object.entries(storeState.paneCardDeckByWorktree ?? {})
+      .filter(([, active]) => active)
+      .map(([worktreeId]) => worktreeId),
+    worktrees: Object.values(storeState.worktreesByRepo ?? {}).flat()
+  })
   for (const worktreeId of Array.from(terminalWorktreeHiddenSinceRef.current.keys())) {
     if (!workspaceSurfaceIdSet.has(worktreeId) || !mountedWorktreeIdsRef.current.has(worktreeId)) {
       terminalWorktreeHiddenSinceRef.current.delete(worktreeId)
@@ -53,6 +62,9 @@ export function collectTerminalParkingPassCandidates(controller: TerminalParking
       terminalWorktreeHiddenSinceRef.current.delete(worktreeId)
       measuringTerminalWorktreeIdsRef.current.delete(worktreeId)
       terminalWorktreeParkCooldownUntilRef.current.delete(worktreeId)
+      continue
+    }
+    if (deckModeExemptWorktreeIds.has(worktreeId)) {
       continue
     }
     const isVisible = activeView === 'terminal' && renderedActiveWorktreeId === worktreeId

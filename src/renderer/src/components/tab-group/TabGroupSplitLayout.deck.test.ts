@@ -91,10 +91,16 @@ vi.mock('./useTabGroupWorkspaceModel', () => ({
   useTabGroupWorkspaceModel: ({ groupId, worktreeId }: { groupId: string; worktreeId: string }) => {
     const tabs = (unifiedTabsByWorktree[worktreeId] ?? []).filter((tab) => tab.groupId === groupId)
     const group = (groupsByWorktree[worktreeId] ?? []).find((item) => item.id === groupId)
+    const orderedTabs = group
+      ? group.tabOrder
+          .map((tabId) => tabs.find((tab) => tab.id === tabId))
+          .filter((tab) => tab !== undefined)
+      : tabs
     return {
       group,
       groupTabs: tabs,
       activeTab: tabs.find((tab) => tab.id === group?.activeTabId) ?? null,
+      deckTabs: orderedTabs,
       commands: {}
     }
   }
