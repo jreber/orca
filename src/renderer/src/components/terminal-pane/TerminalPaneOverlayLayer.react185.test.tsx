@@ -78,7 +78,7 @@ function renderSlot(): void {
         isVisible
         isActive
         activityTerminalPortal={null}
-        onFocusOwningGroup={vi.fn()}
+        onFocusOwningTab={vi.fn()}
         consumeSuppressedPtyExit={() => false}
         leaveWorktreeIfEmpty={vi.fn()}
       />

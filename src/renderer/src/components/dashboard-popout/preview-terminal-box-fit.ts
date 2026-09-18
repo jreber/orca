@@ -9,10 +9,17 @@ type PreviewBoxFitTerminal = Pick<Terminal, 'rows' | 'buffer'>
  * and anchored at whichever end keeps the CURSOR row visible: a fresh shell
  * prompts at the TOP of its screen (blind bottom-anchoring clipped it away),
  * while a busy TUI keeps its action at the bottom.
+ *
+ * `minScale` trades width for legibility: on-screen text size is
+ * boxWidth / cols, so the only way to enlarge it in a small box is to stop
+ * fitting every column and let the box clip the right-hand ones (agent TUIs
+ * keep their content left, so the empty right margin goes first). Default 0
+ * keeps the pure fit behaviour.
  */
 export function createPreviewBoxFit(args: {
   container: HTMLElement
   getTerminal: () => PreviewBoxFitTerminal | null
+  minScale?: number
 }): { fit: () => void; schedule: () => void } {
   const fit = (): void => {
     const terminal = args.getTerminal()
@@ -21,7 +28,10 @@ export function createPreviewBoxFit(args: {
     if (!screen || !box || !terminal) {
       return
     }
-    const scale = Math.min(1, box.clientWidth / Math.max(1, screen.offsetWidth))
+    const scale = Math.min(
+      1,
+      Math.max(args.minScale ?? 0, box.clientWidth / Math.max(1, screen.offsetWidth))
+    )
     args.container.style.transform = scale < 1 ? `scale(${scale})` : ''
     const cellHeight = screen.offsetHeight / Math.max(1, terminal.rows)
     const cursorBottom = (terminal.buffer.active.cursorY + 1) * cellHeight * scale

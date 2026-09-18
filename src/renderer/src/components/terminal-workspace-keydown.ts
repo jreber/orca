@@ -22,6 +22,8 @@ import { translate } from '@/i18n/i18n'
 import { getKeybindingContext } from './terminal-workspace-model'
 import { resolveTerminalAgentTabShortcut } from './terminal-agent-tab-shortcut'
 import { handleTerminalWorkspaceEditorShortcut } from './terminal-workspace-editor-shortcuts'
+import { activateGroupTab } from './tab-group/tab-group-tab-activation'
+import { orderTabsByTabStripOrder } from './tab-group/tab-group-tab-strip-order'
 import type { TerminalActivationController } from './use-terminal-activation-actions'
 
 export function handleTerminalWorkspaceKeyDown(
@@ -242,5 +244,56 @@ export function handleTerminalWorkspaceKeyDown(
       direction: terminalTabDirection,
       scope: 'terminal'
     })
+  }
+  if (!event.repeat && matchShortcut('pane.toggleDeck')) {
+    event.preventDefault()
+    event.stopPropagation()
+    event.stopImmediatePropagation()
+    notifyTerminalCapture('pane.toggleDeck')
+    useAppStore.getState().togglePaneCardDeck(activeWorktreeId)
+    return
+  }
+  const paneFocusDirection = matchShortcut('pane.focusNext')
+    ? 1
+    : matchShortcut('pane.focusPrevious')
+      ? -1
+      : null
+  if (!event.repeat && paneFocusDirection !== null) {
+    const state = useAppStore.getState()
+    // Why: keep the chords inert outside deck mode so they can't shadow
+    // unrelated chords until the toggle is on.
+    if (state.paneCardDeckByWorktree[activeWorktreeId] !== true) {
+      return
+    }
+    const groupId = state.activeGroupIdByWorktree[activeWorktreeId] ?? ''
+    const group = (state.groupsByWorktree[activeWorktreeId] ?? []).find(
+      (candidate) => candidate.id === groupId
+    )
+    // Why: sort to the group's visual tab-strip order (same as the deck
+    // rail), not unifiedTabs insertion order — otherwise a drag-reorder
+    // makes rotation feel backwards relative to what's on screen.
+    const groupTabs = orderTabsByTabStripOrder(
+      (state.unifiedTabsByWorktree[activeWorktreeId] ?? []).filter(
+        (tab) => tab.groupId === groupId
+      ),
+      group?.tabOrder
+    )
+    // Why: a lone tab has nothing to rotate — the rail shows its single card.
+    if (!groupId || groupTabs.length < 2) {
+      return
+    }
+    const activeTabId = group?.activeTabId ?? ''
+    const currentIndex = groupTabs.findIndex((tab) => tab.id === activeTabId)
+    const nextTab =
+      currentIndex === -1
+        ? paneFocusDirection === 1
+          ? groupTabs[0]
+          : (groupTabs.at(-1) ?? groupTabs[0])
+        : groupTabs[(currentIndex + paneFocusDirection + groupTabs.length) % groupTabs.length]
+    event.preventDefault()
+    event.stopPropagation()
+    event.stopImmediatePropagation()
+    notifyTerminalCapture(paneFocusDirection === 1 ? 'pane.focusNext' : 'pane.focusPrevious')
+    activateGroupTab(activeWorktreeId, groupId, nextTab)
   }
 }

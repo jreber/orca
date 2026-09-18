@@ -1,9 +1,10 @@
-import { memo, useCallback, useMemo } from 'react'
+import { memo, useMemo } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '@/store'
 import type { Tab, TabGroup } from '../../../../shared/tab-types'
 import EmulatorPane from './EmulatorPane'
-import { tabGroupBodyAnchorName } from '../tab-group/tab-group-body-anchor'
+import { tabPaneAnchorName } from '../tab-group/tab-group-body-anchor'
+import { getDeckedGroupId, useOverlayFocusActivation } from '../tab-group/tab-group-overlay-focus'
 
 const EMPTY_UNIFIED_TABS: readonly Tab[] = []
 const EMPTY_GROUPS: readonly TabGroup[] = []
@@ -12,16 +13,20 @@ type SimulatorOverlaySlotProps = {
   tab: Tab
   groupId: string | undefined
   isActive: boolean
-  onFocusOwningGroup: ((groupId: string) => void) | undefined
+  // Why: deck mode paints every decked simulator tab into its own card.
+  isDecked: boolean
+  onFocusOwningTab: ((groupId: string | undefined, overlayTabId?: string) => void) | undefined
 }
 
 const SimulatorOverlaySlot = memo(function SimulatorOverlaySlot({
   tab,
   groupId,
   isActive,
-  onFocusOwningGroup
+  isDecked,
+  onFocusOwningTab
 }: SimulatorOverlaySlotProps): React.JSX.Element {
-  const anchorName = groupId !== undefined ? tabGroupBodyAnchorName(groupId) : undefined
+  // Why: per-tab anchor — over the group body normally, into the tab's deck card when decked.
+  const anchorName = groupId !== undefined ? tabPaneAnchorName(tab.id) : undefined
   const style: React.CSSProperties = useMemo(
     () =>
       anchorName
@@ -33,11 +38,11 @@ const SimulatorOverlaySlot = memo(function SimulatorOverlaySlot({
             width: `anchor-size(${anchorName} width)`,
             height: `anchor-size(${anchorName} height)`,
             zIndex: isActive ? 2 : 1,
-            visibility: isActive ? 'visible' : 'hidden',
-            pointerEvents: isActive ? 'auto' : 'none'
+            visibility: isActive || isDecked ? 'visible' : 'hidden',
+            pointerEvents: isActive || isDecked ? 'auto' : 'none'
           }
         : { display: 'none' },
-    [anchorName, isActive]
+    [anchorName, isActive, isDecked]
   )
 
   return (
@@ -45,8 +50,8 @@ const SimulatorOverlaySlot = memo(function SimulatorOverlaySlot({
       style={style}
       className="orca-emulator-overlay-slot min-h-0 min-w-0 overflow-hidden"
       onPointerDownCapture={() => {
-        if (groupId && onFocusOwningGroup) {
-          onFocusOwningGroup(groupId)
+        if (groupId && onFocusOwningTab) {
+          onFocusOwningTab(groupId, tab.id)
         }
       }}
     >
@@ -62,17 +67,16 @@ const EmulatorPaneOverlayLayer = memo(function EmulatorPaneOverlayLayer({
   worktreeId: string
   isWorktreeActive: boolean
 }): React.JSX.Element {
-  const { unifiedTabs, groups } = useAppStore(
+  const { unifiedTabs, groups, deckedGroupId } = useAppStore(
     useShallow((state) => ({
       unifiedTabs: state.unifiedTabsByWorktree[worktreeId] ?? EMPTY_UNIFIED_TABS,
-      groups: state.groupsByWorktree[worktreeId] ?? EMPTY_GROUPS
+      groups: state.groupsByWorktree[worktreeId] ?? EMPTY_GROUPS,
+      deckedGroupId: getDeckedGroupId(state, worktreeId)
     }))
   )
-  const focusGroup = useAppStore((state) => state.focusGroup)
-  const focusOwningGroup = useCallback(
-    (groupId: string) => focusGroup(worktreeId, groupId),
-    [focusGroup, worktreeId]
-  )
+  // Why: deck cards host each tab's real surface, so a click on a background
+  // card's pane must activate that tab, not just focus the group.
+  const focusOwningTab = useOverlayFocusActivation(worktreeId)
 
   const groupActiveTabById = useMemo(() => {
     const lookup: Record<string, string | null | undefined> = {}
@@ -92,13 +96,15 @@ const EmulatorPaneOverlayLayer = memo(function EmulatorPaneOverlayLayer({
       {simulatorTabs.map((tab) => {
         const isActiveInGroup = groupActiveTabById[tab.groupId] === tab.id
         const isActive = Boolean(isWorktreeActive && isActiveInGroup)
+        const isDecked = deckedGroupId !== null && tab.groupId === deckedGroupId
         return (
           <SimulatorOverlaySlot
             key={tab.id}
             tab={tab}
             groupId={tab.groupId}
             isActive={isActive}
-            onFocusOwningGroup={focusOwningGroup}
+            isDecked={isDecked}
+            onFocusOwningTab={focusOwningTab}
           />
         )
       })}

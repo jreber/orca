@@ -7,11 +7,13 @@ const setDragRootNodeMock = vi.fn()
 const useAppStoreMock = vi.fn(
   (
     selector: (state: {
+      paneCardDeckByWorktree: Record<string, boolean>
       recordFeatureInteraction: typeof recordFeatureInteractionMock
       setTabGroupSplitRatio: typeof setTabGroupSplitRatioMock
     }) => unknown
   ) =>
     selector({
+      paneCardDeckByWorktree: {},
       recordFeatureInteraction: recordFeatureInteractionMock,
       setTabGroupSplitRatio: setTabGroupSplitRatioMock
     })
@@ -19,6 +21,7 @@ const useAppStoreMock = vi.fn(
 vi.mock('../../store', () => ({
   useAppStore: (
     selector: (state: {
+      paneCardDeckByWorktree: Record<string, boolean>
       recordFeatureInteraction: typeof recordFeatureInteractionMock
       setTabGroupSplitRatio: typeof setTabGroupSplitRatioMock
     }) => unknown

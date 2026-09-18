@@ -14,6 +14,7 @@ const terminalHarness = vi.hoisted(() => ({
     dispose: ReturnType<typeof vi.fn>
     resize: ReturnType<typeof vi.fn>
     reset: ReturnType<typeof vi.fn>
+    focus: ReturnType<typeof vi.fn>
     paste: ReturnType<typeof vi.fn>
     input: ReturnType<typeof vi.fn>
     scrollToTop: ReturnType<typeof vi.fn>
@@ -632,6 +633,18 @@ describe('AgentTerminalPreview', () => {
     await waitFor(() => expect(terminalHarness.instances).toHaveLength(1))
     expect(connect).toHaveBeenLastCalledWith('pty-live', { scrollbackRows: 24 })
     expect(view.queryByText(/No live terminal/)).not.toBeInTheDocument()
+  })
+
+  it('focuses the terminal on connect by default (claimGrid=true)', async () => {
+    render(<AgentTerminalPreview ptyId="pty-1" />)
+    await waitFor(() => expect(terminalHarness.instances).toHaveLength(1))
+    expect(terminalHarness.instances[0]!.focus).toHaveBeenCalled()
+  })
+
+  it('does not steal focus for a passive mirror preview (claimGrid=false)', async () => {
+    render(<AgentTerminalPreview ptyId="pty-1" claimGrid={false} />)
+    await waitFor(() => expect(terminalHarness.instances).toHaveLength(1))
+    expect(terminalHarness.instances[0]!.focus).not.toHaveBeenCalled()
   })
 
   it('claims a grid sized to the dialog box and never re-requests an unchanged target', async () => {

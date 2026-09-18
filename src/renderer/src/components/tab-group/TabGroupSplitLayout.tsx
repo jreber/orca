@@ -148,6 +148,7 @@ function SplitNode({
   focusedGroupId,
   isWorktreeActive,
   hasSplitGroups,
+  deckModeActive,
   touchesTopEdge,
   touchesRightEdge,
   touchesLeftEdge,
@@ -164,6 +165,7 @@ function SplitNode({
   focusedGroupId?: string
   isWorktreeActive: boolean
   hasSplitGroups: boolean
+  deckModeActive: boolean
   touchesTopEdge: boolean
   touchesRightEdge: boolean
   touchesLeftEdge: boolean
@@ -178,7 +180,8 @@ function SplitNode({
   const recordFeatureInteraction = useAppStore((state) => state.recordFeatureInteraction)
 
   if (node.type === 'leaf') {
-    return (
+    const isFocusedLeaf = isWorktreeActive && node.groupId === focusedGroupId
+    const panel = (
       <TabGroupPanel
         groupId={node.groupId}
         worktreeId={worktreeId}
@@ -187,8 +190,9 @@ function SplitNode({
         // survive worktree switches, but only the visible worktree may own the
         // global terminal shortcuts. If an offscreen group's pane stays
         // "focused", Cmd/Ctrl+W and split shortcuts can hit the wrong worktree.
-        isFocused={isWorktreeActive && node.groupId === focusedGroupId}
+        isFocused={isFocusedLeaf}
         hasSplitGroups={hasSplitGroups}
+        deckModeActive={deckModeActive && isFocusedLeaf}
         touchesRightEdge={touchesRightEdge}
         touchesLeftEdge={touchesLeftEdge}
         touchesBottomEdge={touchesBottomEdge}
@@ -203,6 +207,7 @@ function SplitNode({
         }
       />
     )
+    return panel
   }
 
   const isHorizontal = node.direction === 'horizontal'
@@ -221,6 +226,7 @@ function SplitNode({
           focusedGroupId={focusedGroupId}
           isWorktreeActive={isWorktreeActive}
           hasSplitGroups={hasSplitGroups}
+          deckModeActive={deckModeActive}
           touchesTopEdge={touchesTopEdge}
           touchesRightEdge={isHorizontal ? false : touchesRightEdge}
           touchesLeftEdge={touchesLeftEdge}
@@ -247,6 +253,7 @@ function SplitNode({
           focusedGroupId={focusedGroupId}
           isWorktreeActive={isWorktreeActive}
           hasSplitGroups={hasSplitGroups}
+          deckModeActive={deckModeActive}
           touchesTopEdge={isHorizontal ? touchesTopEdge : false}
           touchesRightEdge={touchesRightEdge}
           touchesLeftEdge={isHorizontal ? false : touchesLeftEdge}
@@ -275,6 +282,9 @@ export default function TabGroupSplitLayout({
 }): React.JSX.Element {
   const dragSplit = useTabDragSplit({ worktreeId, enabled: isWorktreeActive })
   const hasSplits = layout.type === 'split'
+  // Why: the deck flag is per-worktree ephemeral UI; cards are the focused
+  // group's tabs, so a lone group decks exactly like a split does.
+  const deckModeActive = useAppStore((state) => state.paneCardDeckByWorktree[worktreeId] === true)
 
   return (
     <TabDragProvider
@@ -325,6 +335,7 @@ export default function TabGroupSplitLayout({
               focusedGroupId={focusedGroupId}
               isWorktreeActive={isWorktreeActive}
               hasSplitGroups={hasSplits}
+              deckModeActive={deckModeActive}
               touchesTopEdge={true}
               touchesRightEdge={true}
               touchesLeftEdge={true}

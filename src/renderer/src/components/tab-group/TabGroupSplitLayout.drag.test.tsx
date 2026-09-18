@@ -16,6 +16,7 @@ const recordFeatureInteractionMock = vi.fn()
 vi.mock('../../store', () => ({
   useAppStore: (selector: (state: Record<string, unknown>) => unknown) =>
     selector({
+      paneCardDeckByWorktree: {},
       recordFeatureInteraction: recordFeatureInteractionMock,
       setTabGroupSplitRatio: setTabGroupSplitRatioMock
     })

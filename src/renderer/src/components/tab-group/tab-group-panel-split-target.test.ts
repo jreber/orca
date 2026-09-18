@@ -4,6 +4,7 @@ import type { TabDragItemData } from './useTabDragSplit'
 import {
   captureTabGroupPanelGeometrySnapshot,
   findTabGroupPanelUnderPointer,
+  getTabGroupPanelRect,
   resolveActivePaneColumnSplitTarget,
   resolvePanelEdgePaneColumnSplit
 } from './tab-group-panel-split-target'
@@ -634,5 +635,50 @@ describe('resolveActivePaneColumnSplitTarget', () => {
     )
     expect(queryAll).toHaveBeenCalledTimes(1)
     expect(counts.reduce((sum, entry) => sum + entry.panelReads + entry.bodyReads, 0)).toBe(8)
+  })
+
+  it('excludes deck-card bodies from split-target geometry and scans', () => {
+    const panelRect = rect({ left: 0, top: 0, width: 300, height: 600 })
+    const bodyRect = rect({
+      left: 0,
+      top: TAB_GROUP_TAB_STRIP_HEIGHT_PX,
+      width: 300,
+      height: 600 - TAB_GROUP_TAB_STRIP_HEIGHT_PX
+    })
+    const realBody = {
+      dataset: { tabGroupBodyId: 'group-1', worktreeId: 'wt-1' },
+      getBoundingClientRect: () => bodyRect,
+      parentElement: { getBoundingClientRect: () => panelRect }
+    }
+    const cardBody = {
+      dataset: {
+        tabGroupBodyId: 'group-2',
+        worktreeId: 'wt-1',
+        tabGroupDeckCardBody: ''
+      },
+      getBoundingClientRect: () => bodyRect,
+      parentElement: { getBoundingClientRect: () => panelRect }
+    }
+    vi.stubGlobal('document', {
+      querySelector: vi.fn((selector: string) => {
+        const match = selector.match(/data-tab-group-body-id="([^"]+)"/)
+        return (
+          [cardBody, realBody].find((body) => body.dataset.tabGroupBodyId === match?.[1]) ?? null
+        )
+      }),
+      // Why: card body first — a stale scan would let it win the pointer hit.
+      querySelectorAll: vi.fn(() => [cardBody, realBody])
+    })
+
+    const geometry = captureTabGroupPanelGeometrySnapshot('wt-1')
+    expect(geometry.entries.map((entry) => entry.groupId)).toEqual(['group-1'])
+    expect(getTabGroupPanelRect('group-2', 'wt-1')).toBeNull()
+
+    // Why: the pointer sits dead-center of BOTH bodies' rects — the card body
+    // must never win the scan; the real panel resolves instead.
+    expect(findTabGroupPanelUnderPointer('wt-1', { x: 150, y: 300 })).toEqual({
+      groupId: 'group-1',
+      panelRect
+    })
   })
 })

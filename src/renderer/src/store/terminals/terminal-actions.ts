@@ -51,6 +51,8 @@ export type TerminalActions = {
   clearNativeChatLaunchDraft: (tabId: string) => void
   markDefaultTerminalTabsApplied: (worktreeId: string) => void
   setHydrationSucceeded: (value: boolean) => void
+  togglePaneCardDeck: (worktreeId: string) => void
+  setTabGroupDeckWidth: (width: number | null) => void
   consumePendingSnapshot: (ptyId: string) => {
     snapshot: string
     cols?: number

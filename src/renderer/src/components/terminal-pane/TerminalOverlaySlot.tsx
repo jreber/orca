@@ -19,7 +19,7 @@ type TerminalOverlaySlotProps = {
   isVisible: boolean
   isActive: boolean
   activityTerminalPortal: ActivityTerminalPortalTarget | null
-  onFocusOwningGroup: ((groupId: string) => void) | undefined
+  onFocusOwningTab: ((groupId: string | undefined, overlayTabId?: string) => void) | undefined
   consumeSuppressedPtyExit: (ptyId: string) => boolean
   leaveWorktreeIfEmpty: () => void
 }
@@ -35,7 +35,7 @@ export const TerminalOverlaySlot = memo(function TerminalOverlaySlot({
   isVisible,
   isActive,
   activityTerminalPortal,
-  onFocusOwningGroup,
+  onFocusOwningTab,
   consumeSuppressedPtyExit,
   leaveWorktreeIfEmpty
 }: TerminalOverlaySlotProps): React.JSX.Element {
@@ -102,11 +102,12 @@ export const TerminalOverlaySlot = memo(function TerminalOverlaySlot({
   return (
     <RetainedPaneHost
       groupId={groupId}
+      overlayTabId={terminalTabId}
       isVisible={isVisible}
       measureWhileHidden={shouldMeasureHiddenStartup}
       fitTerminal
       data-terminal-overlay-tab-id={terminalTabId}
-      onFocusOwningGroup={onFocusOwningGroup}
+      onFocusOwningTab={onFocusOwningTab}
     >
       {terminalPane}
     </RetainedPaneHost>

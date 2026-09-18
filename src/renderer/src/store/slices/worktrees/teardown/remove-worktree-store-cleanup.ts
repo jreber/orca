@@ -64,6 +64,8 @@ export function applyRemoveWorktreeSuccessState(
       // Why: closeTab deletes these per-tab maps but removeWorktree missed them, leaking a split pane's expand flags.
       expandedPaneByTabId: omitByTabId(s.expandedPaneByTabId),
       canExpandPaneByTabId: omitByTabId(s.canExpandPaneByTabId),
+      // Why: the card-deck toggle is worktree-scoped ephemeral UI; it must not survive the worktree.
+      paneCardDeckByWorktree: omitByWorktree(s.paneCardDeckByWorktree),
       deleteStateByWorktreeId: removeDeleteStatesForWorktreeIds(
         s.deleteStateByWorktreeId,
         new Set(worktreeIds)

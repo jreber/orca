@@ -120,6 +120,20 @@ export function hasPtySerializer(ptyId: string): boolean {
   return serializersByPtyId.has(ptyId)
 }
 
+// Why: in-renderer consumers (e.g. deck card text previews) read the same
+// registered serializer the mobile-stream IPC path uses — the pane's xterm is
+// the single source of screen truth.
+export async function readSerializedPtyBuffer(
+  ptyId: string,
+  opts?: SerializeOpts
+): Promise<SerializedBuffer | null> {
+  const entry = serializersByPtyId.get(ptyId)
+  if (!entry) {
+    return null
+  }
+  return Promise.resolve(entry.fn(opts) ?? null).catch(() => null)
+}
+
 function ensureSerializerListener(): void {
   if (listenerAttached) {
     return

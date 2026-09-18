@@ -39,7 +39,7 @@ it('retains pane content across group moves and visibility changes using measure
   const focus = vi.fn()
   const content = <input defaultValue="draft" />
   const view = render(
-    <RetainedPaneHost groupId="left" isVisible onFocusOwningGroup={focus}>
+    <RetainedPaneHost groupId="left" isVisible onFocusOwningTab={focus}>
       {content}
     </RetainedPaneHost>
   )
@@ -50,7 +50,7 @@ it('retains pane content across group moves and visibility changes using measure
   fireEvent.change(input, { target: { value: 'unsent draft' } })
 
   view.rerender(
-    <RetainedPaneHost groupId="right" isVisible onFocusOwningGroup={focus}>
+    <RetainedPaneHost groupId="right" isVisible onFocusOwningTab={focus}>
       {content}
     </RetainedPaneHost>
   )
@@ -58,7 +58,7 @@ it('retains pane content across group moves and visibility changes using measure
   expect(view.getByRole('textbox')).toBe(input)
   expect((input as HTMLInputElement).value).toBe('unsent draft')
   fireEvent.pointerDown(input)
-  expect(focus).toHaveBeenLastCalledWith('right')
+  expect(focus).toHaveBeenLastCalledWith('right', undefined)
 
   anchors[1].getBoundingClientRect = () => new DOMRect(450, 32, 350, 500)
   act(() => notifyResize())
@@ -83,6 +83,29 @@ it('retains pane content across group moves and visibility changes using measure
   expect(view.getByRole('textbox')).toBe(input)
   view.unmount()
   expect(disconnect).toHaveBeenCalled()
+})
+
+it('measures a deck card claiming the overlay tab id instead of the group body', () => {
+  const card = document.createElement('div')
+  card.dataset.tabPaneAnchorId = 'tab-1'
+  card.getBoundingClientRect = () => new DOMRect(120, 240, 300, 180)
+  document.body.append(card)
+
+  const view = render(
+    <RetainedPaneHost groupId="left" overlayTabId="tab-1" isVisible>
+      <input />
+    </RetainedPaneHost>
+  )
+  const host = view.container.firstElementChild as HTMLDivElement
+  expect(host.style.top).toBe('240px')
+  expect(host.style.left).toBe('120px')
+  expect(host.style.width).toBe('300px')
+  expect(host.style.height).toBe('180px')
+  // Why: the deck's FLIP transition finds this overlay by tab id alone,
+  // regardless of content type.
+  expect(host.getAttribute('data-retained-pane-overlay-id')).toBe('tab-1')
+
+  card.remove()
 })
 
 it('allows hidden terminal startup measurement without exposing input or starting fit timers for chat', () => {

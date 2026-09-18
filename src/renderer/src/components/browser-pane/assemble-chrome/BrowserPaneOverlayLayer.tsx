@@ -7,7 +7,11 @@ import type { Tab, TabGroup } from '../../../../../shared/tab-types'
 import BrowserPane from './browser-workspace-pane'
 import { DeferredBrowserContent } from './DeferredBrowserContent'
 import type { BrowserChromeShortcutScope } from '../describe-page/browser-page-types'
-import { tabGroupBodyAnchorName } from '../../tab-group/tab-group-body-anchor'
+import { tabGroupBodyAnchorName, tabPaneAnchorName } from '../../tab-group/tab-group-body-anchor'
+import {
+  getDeckedGroupId,
+  useOverlayFocusActivation
+} from '../../tab-group/tab-group-overlay-focus'
 import { useBrowserGuestPaintRetention } from '../host-guest/browser-guest-paint-retention'
 import {
   isClientHostedBrowserRowSelectionLive,
@@ -34,9 +38,11 @@ type BrowserOverlaySlotProps = {
   // Why: undefined = orphan tab (in browserTabs but not referenced by any group's unified-tab list); the fallback branch keeps these hidden.
   groupId: string | undefined
   isActive: boolean
+  // Why: deck mode paints every decked browser tab into its own card, not just the group's active tab.
+  isDecked: boolean
   chromeShortcutScope: BrowserChromeShortcutScope
   // Why: overlay is a sibling of the group layout, so pane focus doesn't bubble to TabGroupPanel; re-sync it here or split-view clicks leave activeGroupIdByWorktree stale.
-  onFocusOwningGroup: ((groupId: string) => void) | undefined
+  onFocusOwningTab: ((groupId: string | undefined, overlayTabId?: string) => void) | undefined
 }
 
 // Why: memoize each slot so unrelated worktree mutations don't cascade a re-render into every BrowserPane subtree.
@@ -45,8 +51,9 @@ const BrowserOverlaySlot = memo(function BrowserOverlaySlot({
   isWorktreeActive,
   groupId,
   isActive,
+  isDecked,
   chromeShortcutScope,
-  onFocusOwningGroup
+  onFocusOwningTab
 }: BrowserOverlaySlotProps): React.JSX.Element {
   // Why: persistent page viewports (webview guests) live under this root so they survive BrowserPane chrome unmounts without reparenting.
   const setSlotViewportRef = useCallback(
@@ -55,15 +62,18 @@ const BrowserOverlaySlot = memo(function BrowserOverlaySlot({
     },
     [browserTab.id]
   )
-  const anchorName = groupId !== undefined ? tabGroupBodyAnchorName(groupId) : undefined
+  // Why: per-tab anchor — the overlay paints over its group body normally, or
+  // into the tab's own deck card when the group is decked (same element: the
+  // group body claims the tab anchor when not decked, the card when decked).
+  const anchorName = groupId !== undefined ? tabPaneAnchorName(browserTab.id) : undefined
   const browserPageIds =
     browserTab.pageIds && browserTab.pageIds.length > 0
       ? browserTab.pageIds
       : [browserTab.activePageId ?? browserTab.id]
   const needsGuestPaint = useBrowserGuestPaintRetention(browserPageIds)
   const isMountAdmitted = useAnyBrowserPageMountAdmission(browserPageIds)
-  const isPaintable = isActive || needsGuestPaint || isMountAdmitted
-  // Why: CSS anchor positioning pins the overlay to its owning group's body — a tab move only swaps positionAnchor, no measurement/state.
+  const isPaintable = isActive || isDecked || needsGuestPaint || isMountAdmitted
+  // Why: CSS anchor positioning pins the overlay to the tab's anchor provider — a tab move only swaps anchor claims, no measurement/state.
   // Orphan branch (no anchorName) stays display:none until the tab is reassigned or destroyed.
   const style: React.CSSProperties = useMemo(
     () =>
@@ -76,8 +86,8 @@ const BrowserOverlaySlot = memo(function BrowserOverlaySlot({
             width: `anchor-size(${anchorName} width)`,
             height: `anchor-size(${anchorName} height)`,
             display: isPaintable ? 'flex' : 'none',
-            pointerEvents: isActive ? 'auto' : 'none',
-            opacity: isActive ? 1 : 0
+            pointerEvents: isActive || isDecked ? 'auto' : 'none',
+            opacity: isActive || isDecked ? 1 : 0
           }
         : {
             position: 'absolute',
@@ -88,18 +98,22 @@ const BrowserOverlaySlot = memo(function BrowserOverlaySlot({
             display: 'none',
             pointerEvents: 'none'
           },
-    [anchorName, isActive, isPaintable]
+    [anchorName, isActive, isDecked, isPaintable]
   )
   const handleFocus = useCallback(() => {
-    if (groupId !== undefined && onFocusOwningGroup) {
-      onFocusOwningGroup(groupId)
+    if (groupId !== undefined && onFocusOwningTab) {
+      onFocusOwningTab(groupId, browserTab.id)
     }
-  }, [groupId, onFocusOwningGroup])
+  }, [browserTab.id, groupId, onFocusOwningTab])
 
   return (
     <div
       style={style}
-      className="relative flex min-h-0 flex-1 flex-col"
+      // Why: every other per-tab anchor overlay (terminal, agent-session,
+      // simulator) clips itself to its anchor-sized box — this one didn't,
+      // so a background browser tab's real content could paint past its
+      // small deck card onto whatever's underneath.
+      className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
       data-browser-overlay-tab-id={browserTab.id}
       onPointerDown={handleFocus}
       onFocusCapture={handleFocus}
@@ -125,28 +139,25 @@ const BrowserPaneOverlayLayer = memo(function BrowserPaneOverlayLayer({
   worktreeId: string
   isWorktreeActive: boolean
 }): React.JSX.Element {
-  const { browserTabs, unifiedTabs, groups, focusedGroupId } = useAppStore(
+  const { browserTabs, unifiedTabs, groups, focusedGroupId, deckedGroupId } = useAppStore(
     useShallow((state) => ({
       browserTabs: state.browserTabsByWorktree[worktreeId] ?? EMPTY_BROWSER_TABS,
       unifiedTabs: state.unifiedTabsByWorktree[worktreeId] ?? EMPTY_UNIFIED_TABS,
       groups: state.groupsByWorktree[worktreeId] ?? EMPTY_GROUPS,
       // Why: the focused split within this worktree; gates the browser Find shortcut so a focused terminal in the same split keeps Cmd/Ctrl+F (#11348).
-      focusedGroupId: state.activeGroupIdByWorktree[worktreeId]
+      focusedGroupId: state.activeGroupIdByWorktree[worktreeId],
+      deckedGroupId: getDeckedGroupId(state, worktreeId)
     }))
   )
-  const focusGroup = useAppStore((state) => state.focusGroup)
+  // Why: deck cards host each tab's real surface, so a click on a background
+  // card's pane must activate that tab, not just focus the group.
+  const focusOwningTab = useOverlayFocusActivation(worktreeId)
   const knownFocusedGroupId = useMemo(
     () =>
       focusedGroupId !== undefined && groups.some((group) => group.id === focusedGroupId)
         ? focusedGroupId
         : undefined,
     [focusedGroupId, groups]
-  )
-
-  // Why: stable identity so BrowserOverlaySlot's memo holds; groupId is passed at call time so one callback serves every slot.
-  const focusOwningGroup = useCallback(
-    (groupId: string) => focusGroup(worktreeId, groupId),
-    [focusGroup, worktreeId]
   )
 
   // Why: build this lookup outside the zustand selector — a fresh object inside it would break useShallow equality and re-render on every unrelated mutation.
@@ -177,6 +188,8 @@ const BrowserPaneOverlayLayer = memo(function BrowserPaneOverlayLayer({
     <>
       {browserTabs.map((browserTab) => {
         const assignment = assignments.get(browserTab.id)
+        // Why: deck mode paints every tab of the decked group into its card.
+        const isDecked = deckedGroupId !== null && assignment?.groupId === deckedGroupId
         const isActive = Boolean(isWorktreeActive && assignment && assignment.isActiveInGroup)
         const chromeShortcutScope: BrowserChromeShortcutScope = !isActive
           ? 'inactive'
@@ -192,8 +205,9 @@ const BrowserPaneOverlayLayer = memo(function BrowserPaneOverlayLayer({
             isWorktreeActive={isWorktreeActive}
             groupId={assignment?.groupId}
             isActive={isActive}
+            isDecked={isDecked}
             chromeShortcutScope={chromeShortcutScope}
-            onFocusOwningGroup={focusOwningGroup}
+            onFocusOwningTab={focusOwningTab}
           />
         )
       })}
@@ -204,6 +218,9 @@ const BrowserPaneOverlayLayer = memo(function BrowserPaneOverlayLayer({
         worktreeId={worktreeId}
         groups={groups}
         isWorktreeActive={isWorktreeActive}
+        // Why: a decked group's body is the card mosaic — a client-hosted row
+        // overlay would cover the cards, so it yields while its group is decked.
+        skipGroupId={deckedGroupId}
       />
     </>
   )
@@ -212,11 +229,13 @@ const BrowserPaneOverlayLayer = memo(function BrowserPaneOverlayLayer({
 function ClientHostedBrowserRowOverlaySlot({
   worktreeId,
   groups,
-  isWorktreeActive
+  isWorktreeActive,
+  skipGroupId
 }: {
   worktreeId: string
   groups: readonly TabGroup[]
   isWorktreeActive: boolean
+  skipGroupId?: string | null
 }): React.JSX.Element | null {
   const rows = useClientHostedBrowserRows(worktreeId)
   const selection = useClientHostedBrowserRowSelection()
@@ -243,7 +262,7 @@ function ClientHostedBrowserRowOverlaySlot({
         : null,
     [anchorName]
   )
-  if (!selectedRow || !style || !isWorktreeActive) {
+  if (!selectedRow || !style || !isWorktreeActive || liveSelection?.groupId === skipGroupId) {
     return null
   }
   return (

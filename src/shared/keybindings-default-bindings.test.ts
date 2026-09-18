@@ -341,6 +341,81 @@ describe('keybindings', () => {
     expect(getEffectiveKeybindingsForAction(maximizeAction, 'win32')).toEqual([])
   })
 
+  it('defines card-deck toggle and rotation defaults across platforms', () => {
+    expect(getEffectiveKeybindingsForAction('pane.toggleDeck', 'darwin')).toEqual(['Mod+Shift+K'])
+    expect(getEffectiveKeybindingsForAction('pane.toggleDeck', 'linux')).toEqual(['Mod+Shift+K'])
+    expect(getEffectiveKeybindingsForAction('pane.toggleDeck', 'win32')).toEqual(['Mod+Shift+K'])
+    expect(getEffectiveKeybindingsForAction('pane.focusNext', 'darwin')).toEqual([
+      'Mod+Shift+PageDown'
+    ])
+    expect(getEffectiveKeybindingsForAction('pane.focusNext', 'linux')).toEqual([
+      'Ctrl+Shift+PageDown'
+    ])
+    expect(getEffectiveKeybindingsForAction('pane.focusNext', 'win32')).toEqual([
+      'Ctrl+Shift+PageDown'
+    ])
+    expect(getEffectiveKeybindingsForAction('pane.focusPrevious', 'darwin')).toEqual([
+      'Mod+Shift+PageUp'
+    ])
+    expect(getEffectiveKeybindingsForAction('pane.focusPrevious', 'linux')).toEqual([
+      'Ctrl+Shift+PageUp'
+    ])
+    expect(getEffectiveKeybindingsForAction('pane.focusPrevious', 'win32')).toEqual([
+      'Ctrl+Shift+PageUp'
+    ])
+
+    for (const actionId of ['pane.toggleDeck', 'pane.focusNext', 'pane.focusPrevious'] as const) {
+      expect(getKeybindingDefinition(actionId)).toMatchObject({
+        id: actionId,
+        group: 'Card Deck',
+        scope: 'tabs',
+        allowInTerminal: true
+      })
+    }
+
+    const macDeckChord = {
+      key: 'k',
+      code: 'KeyK',
+      meta: true,
+      control: false,
+      alt: false,
+      shift: true
+    }
+    expect(keybindingMatchesAction('pane.toggleDeck', macDeckChord, 'darwin')).toBe(true)
+    const linuxDeckChord = { ...macDeckChord, meta: false, control: true }
+    expect(keybindingMatchesAction('pane.toggleDeck', linuxDeckChord, 'linux')).toBe(true)
+    const macFocusNext = {
+      key: 'PageDown',
+      code: 'PageDown',
+      meta: true,
+      control: false,
+      alt: false,
+      shift: true
+    }
+    expect(keybindingMatchesAction('pane.focusNext', macFocusNext, 'darwin')).toBe(true)
+
+    // Why: the deck toggle must not share a chord with the inner-terminal split
+    // defaults (terminal.splitRight/splitDown), which the pane-level keyboard
+    // hook claims first while a terminal is focused.
+    expect(findKeybindingConflicts('darwin', { 'pane.toggleDeck': ['Mod+Shift+K'] })).toEqual([])
+    expect(findKeybindingConflicts('linux', { 'pane.toggleDeck': ['Mod+Shift+K'] })).toEqual([])
+    expect(findKeybindingConflicts('win32', { 'pane.toggleDeck': ['Mod+Shift+K'] })).toEqual([])
+    for (const platform of ['darwin', 'linux', 'win32'] as const) {
+      expect(getEffectiveKeybindingsForAction('terminal.splitRight', platform)).not.toContain(
+        'Mod+Shift+K'
+      )
+      expect(getEffectiveKeybindingsForAction('terminal.splitDown', platform)).not.toContain(
+        'Mod+Shift+K'
+      )
+    }
+    expect(findKeybindingConflicts('darwin', { 'pane.focusNext': ['Mod+Shift+PageDown'] })).toEqual(
+      []
+    )
+    expect(findKeybindingConflicts('linux', { 'pane.focusNext': ['Ctrl+Shift+PageDown'] })).toEqual(
+      []
+    )
+  })
+
   it('captures and round-trips the macOS Option-composed maximize chord', () => {
     const maximizeAction = 'floatingWorkspace.maximize' as KeybindingActionId
 

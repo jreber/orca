@@ -128,11 +128,22 @@ export function createTabsGroupActions(
         // Why: drop the dead group's recent-quick-command entry so the map can't grow unbounded as groups open/close.
         const { [groupId]: _droppedRecent, ...remainingRecent } =
           current.recentQuickCommandIdByGroup
+        const collapsedToLeaf =
+          (collapsedState.layoutByWorktree[worktreeId]?.type ?? 'leaf') === 'leaf'
         return {
           groupsByWorktree: { ...current.groupsByWorktree, [worktreeId]: remainingGroups },
           layoutByWorktree: collapsedState.layoutByWorktree,
           activeGroupIdByWorktree: collapsedState.activeGroupIdByWorktree,
           recentQuickCommandIdByGroup: remainingRecent,
+          // Why: the deck has nothing to show once the last split collapses; clear the flag so a later split starts in the normal layout.
+          ...(collapsedToLeaf && current.paneCardDeckByWorktree[worktreeId]
+            ? {
+                paneCardDeckByWorktree: {
+                  ...current.paneCardDeckByWorktree,
+                  [worktreeId]: false
+                }
+              }
+            : {}),
           ...(current.activeWorktreeId === worktreeId
             ? buildActiveSurfacePatch(
                 {

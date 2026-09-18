@@ -9,6 +9,7 @@ import {
 } from '../activity/activity-terminal-portal'
 import { shouldMountBackgroundWorktreeTab } from '../terminal/background-terminal-worktree-mount'
 import { useNativeChatToggleShortcut } from '../native-chat/use-native-chat-toggle-shortcut'
+import { useOverlayFocusActivation } from '../tab-group/tab-group-overlay-focus'
 import { TerminalOverlaySlot } from './TerminalOverlaySlot'
 import { useTerminalTabColdParking } from './use-terminal-tab-cold-parking'
 
@@ -55,10 +56,12 @@ const TerminalPaneOverlayLayer = memo(function TerminalPaneOverlayLayer({
       activeGroupId: state.activeGroupIdByWorktree[worktreeId]
     }))
   )
-  const focusGroup = useAppStore((state) => state.focusGroup)
   const consumeSuppressedPtyExit = useAppStore((state) => state.consumeSuppressedPtyExit)
   const setActiveWorktree = useAppStore((state) => state.setActiveWorktree)
   const reconcileWorktreeTabModel = useAppStore((state) => state.reconcileWorktreeTabModel)
+  // Why: deck cards host each tab's real surface, so a click on a background
+  // card's pane must activate that tab, not just focus the group.
+  const focusOwningTab = useOverlayFocusActivation(worktreeId)
 
   useNativeChatToggleShortcut(worktreeId, isWorktreeActive)
 
@@ -72,11 +75,6 @@ const TerminalPaneOverlayLayer = memo(function TerminalPaneOverlayLayer({
       setActiveWorktree(null)
     }
   }, [reconcileWorktreeTabModel, setActiveWorktree, worktreeId])
-
-  const focusOwningGroup = useCallback(
-    (groupId: string) => focusGroup(worktreeId, groupId),
-    [focusGroup, worktreeId]
-  )
 
   const groupActiveTabById = useMemo(() => {
     const lookup: Record<string, string | null | undefined> = {}
@@ -138,8 +136,16 @@ const TerminalPaneOverlayLayer = memo(function TerminalPaneOverlayLayer({
         )
         .map((terminalTab) => {
           const assignment = assignments.get(terminalTab.id)
-          const isVisible = Boolean(isWorktreeActive && assignment?.isActiveInGroup)
-          const isActive = Boolean(isVisible && assignment?.groupId === activeGroupId)
+          // Why: a decked group's background tabs stay hidden here even though
+          // their rail card is on screen. The card shows a read-only mirror of
+          // the pty instead (see isDeckCardHostedTab): painting the real pane
+          // into a card would fit xterm to card size and forward that grid to
+          // the PTY, rewrapping the session for whoever is working in it.
+          const isVisible = Boolean(isWorktreeActive && assignment && assignment.isActiveInGroup)
+          // Why: keyboard ownership stays with the focused group's active tab.
+          const isActive = Boolean(
+            isVisible && assignment?.isActiveInGroup && assignment.groupId === activeGroupId
+          )
           const activityTerminalPortal = findActivityTerminalPortal(activityTerminalPortals, {
             worktreeId,
             tabId: terminalTab.id
@@ -160,7 +166,7 @@ const TerminalPaneOverlayLayer = memo(function TerminalPaneOverlayLayer({
               isVisible={isVisible}
               isActive={isActive}
               activityTerminalPortal={activityTerminalPortal}
-              onFocusOwningGroup={focusOwningGroup}
+              onFocusOwningTab={focusOwningTab}
               consumeSuppressedPtyExit={consumeSuppressedPtyExit}
               leaveWorktreeIfEmpty={leaveWorktreeIfEmpty}
             />

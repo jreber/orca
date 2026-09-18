@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo } from 'react'
+import { memo, useMemo } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import type { Tab, TabGroup } from '../../../../shared/tab-types'
 import { isAgentSessionHandleProvider } from '../../../../shared/agent-session-provider-handle'
@@ -6,6 +6,7 @@ import { useAppStore } from '@/store'
 import { getRuntimeEnvironmentIdForWorktree } from '@/lib/worktree-runtime-owner'
 import { getActiveRuntimeTarget, type RuntimeClientTarget } from '@/runtime/runtime-rpc-client'
 import { RetainedPaneHost } from '../tab-group/RetainedPaneHost'
+import { getDeckedGroupId, useOverlayFocusActivation } from '../tab-group/tab-group-overlay-focus'
 import NativeChatView from './NativeChatView'
 
 type StructuredAgentSessionTab = Tab & {
@@ -21,22 +22,26 @@ const StructuredAgentSessionOverlaySlot = memo(function StructuredAgentSessionOv
   groupId,
   isActive,
   isFocusedGroup,
+  isDecked,
   target,
-  onFocusOwningGroup
+  onFocusOwningTab
 }: {
   tab: StructuredAgentSessionTab
   groupId: string | undefined
   isActive: boolean
   isFocusedGroup: boolean
+  // Why: deck mode paints every decked agent-session tab into its own card.
+  isDecked: boolean
   target: RuntimeClientTarget
-  onFocusOwningGroup: ((groupId: string) => void) | undefined
+  onFocusOwningTab: ((groupId: string | undefined, overlayTabId?: string) => void) | undefined
 }): React.JSX.Element {
   return (
     <RetainedPaneHost
       groupId={groupId}
-      isVisible={isActive}
+      overlayTabId={tab.id}
+      isVisible={isActive || isDecked}
       data-structured-agent-session-overlay-tab-id={tab.id}
-      onFocusOwningGroup={onFocusOwningGroup}
+      onFocusOwningTab={onFocusOwningTab}
     >
       <NativeChatView
         mode="structured"
@@ -60,22 +65,22 @@ const StructuredAgentSessionPaneOverlayLayer = memo(
     worktreeId: string
     isWorktreeActive: boolean
   }): React.JSX.Element {
-    const { unifiedTabs, groups, runtimeEnvironmentId, activeGroupId } = useAppStore(
-      useShallow((state) => ({
-        unifiedTabs: state.unifiedTabsByWorktree[worktreeId] ?? EMPTY_UNIFIED_TABS,
-        groups: state.groupsByWorktree[worktreeId] ?? EMPTY_GROUPS,
-        runtimeEnvironmentId: getRuntimeEnvironmentIdForWorktree(state, worktreeId),
-        activeGroupId: state.activeGroupIdByWorktree[worktreeId]
-      }))
-    )
-    const focusGroup = useAppStore((state) => state.focusGroup)
+    const { unifiedTabs, groups, runtimeEnvironmentId, activeGroupId, deckedGroupId } =
+      useAppStore(
+        useShallow((state) => ({
+          unifiedTabs: state.unifiedTabsByWorktree[worktreeId] ?? EMPTY_UNIFIED_TABS,
+          groups: state.groupsByWorktree[worktreeId] ?? EMPTY_GROUPS,
+          runtimeEnvironmentId: getRuntimeEnvironmentIdForWorktree(state, worktreeId),
+          activeGroupId: state.activeGroupIdByWorktree[worktreeId],
+          deckedGroupId: getDeckedGroupId(state, worktreeId)
+        }))
+      )
+    // Why: deck cards host each tab's real surface, so a click on a background
+    // card's pane must activate that tab, not just focus the group.
+    const focusOwningTab = useOverlayFocusActivation(worktreeId)
     const target = useMemo(
       () => getActiveRuntimeTarget({ activeRuntimeEnvironmentId: runtimeEnvironmentId }),
       [runtimeEnvironmentId]
-    )
-    const focusOwningGroup = useCallback(
-      (groupId: string) => focusGroup(worktreeId, groupId),
-      [focusGroup, worktreeId]
     )
     const groupActiveTabById = useMemo(
       () => new Map(groups.map((group) => [group.id, group.activeTabId] as const)),
@@ -104,8 +109,9 @@ const StructuredAgentSessionPaneOverlayLayer = memo(
               groupActiveTabById.get(tab.groupId) === tab.id &&
               tab.groupId === activeGroupId
             )}
+            isDecked={deckedGroupId !== null && tab.groupId === deckedGroupId}
             target={target}
-            onFocusOwningGroup={focusOwningGroup}
+            onFocusOwningTab={focusOwningTab}
           />
         ))}
       </>

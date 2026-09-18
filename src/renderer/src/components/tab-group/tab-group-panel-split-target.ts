@@ -35,12 +35,20 @@ function escapeCssAttrValue(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
 }
 
+// Why: deck-mode card bodies carry the body attributes for live pane anchoring
+// but must not resolve as split-target panel geometry — the rail is not a pane
+// surface; drops onto cards flow through the pane-body droppable instead.
+function isDeckCardBody(body: HTMLElement): boolean {
+  return body.dataset?.tabGroupDeckCardBody !== undefined
+}
+
 function getTabGroupBodyElement(groupId: string, worktreeId: string): HTMLElement | null {
   const escapedGroupId = escapeCssAttrValue(groupId)
   const escapedWorktreeId = escapeCssAttrValue(worktreeId)
-  return document.querySelector<HTMLElement>(
+  const body = document.querySelector<HTMLElement>(
     `[data-tab-group-body-id="${escapedGroupId}"][data-worktree-id="${escapedWorktreeId}"]`
   )
+  return body && !isDeckCardBody(body) ? body : null
 }
 
 export function getTabGroupPanelRect(groupId: string, worktreeId: string): DOMRect | null {
@@ -60,6 +68,9 @@ export function captureTabGroupPanelGeometrySnapshot(
   )
   const entries: TabGroupPanelGeometryEntry[] = []
   for (const body of bodies) {
+    if (isDeckCardBody(body)) {
+      continue
+    }
     const groupId = body.dataset.tabGroupBodyId
     const panelElement = body.parentElement
     if (!groupId || !panelElement) {
@@ -107,6 +118,9 @@ export function findTabGroupPanelUnderPointer(
     `[data-tab-group-body-id][data-worktree-id="${escapedWorktreeId}"]`
   )
   for (const body of bodies) {
+    if (isDeckCardBody(body)) {
+      continue
+    }
     const groupId = body.dataset.tabGroupBodyId
     if (!groupId) {
       continue

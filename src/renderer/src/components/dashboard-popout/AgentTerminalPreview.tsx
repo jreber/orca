@@ -54,11 +54,22 @@ function clamp(value: number, min: number, max: number): number {
 export function AgentTerminalPreview({
   ptyId,
   terminalInput = null,
+  claimGrid = true,
+  minFitScale,
   className
 }: {
   ptyId: string
   /** Host-input facts relayed with the card; null routes bytes by client OS. */
   terminalInput?: DashboardCardTerminalInput | null
+  /**
+   * Whether this view may resize the PTY to its own box. Off for a small
+   * always-mounted preview (a deck rail card): reflowing the real session to
+   * card dimensions rewraps the agent TUI's frame for whoever is working in
+   * it, so those callers take the scaled fallback instead.
+   */
+  claimGrid?: boolean
+  /** Legibility floor for the fit scale; clips columns (see createPreviewBoxFit). */
+  minFitScale?: number
   className?: string
 }): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -118,14 +129,20 @@ export function AgentTerminalPreview({
     let retryTimer: ReturnType<typeof setTimeout> | null = null
     const pendingLivePayloads: Extract<TerminalPreviewDataPayload, { type: 'data' }>[] = []
 
-    const boxFit = createPreviewBoxFit({ container, getTerminal: () => terminal })
+    const boxFit = createPreviewBoxFit({
+      container,
+      getTerminal: () => terminal,
+      minScale: minFitScale
+    })
     const scheduleFit = boxFit.schedule
 
-    const gridClaim = createPreviewGridClaim({
-      ptyId,
-      container,
-      getTerminal: () => terminal
-    })
+    const gridClaim = claimGrid
+      ? createPreviewGridClaim({
+          ptyId,
+          container,
+          getTerminal: () => terminal
+        })
+      : { schedule: (): void => {}, dispose: (): void => {} }
     // Box growth/shrink (window resize) changes the reachable grid.
     const boxResizeObserver =
       typeof ResizeObserver === 'undefined'
@@ -322,7 +339,11 @@ export function AgentTerminalPreview({
       }
       scheduleFit()
       gridClaim.schedule()
-      terminal.focus()
+      // Why: a passive deck-card mirror (claimGrid=false) must not steal focus
+      // back from the real pane on every reconnect/resync.
+      if (claimGrid) {
+        terminal.focus()
+      }
     }
 
     const setup = async (replaceExisting = false): Promise<void> => {
@@ -412,7 +433,7 @@ export function AgentTerminalPreview({
       terminal?.dispose()
       terminalRef.current = null
     }
-  }, [ptyId, terminalTheme, terminalMode])
+  }, [ptyId, terminalTheme, terminalMode, claimGrid, minFitScale])
 
   // Why: appearance settings must land on the open terminal, and the OS input
   // source can flip Option-as-Alt with no settings change at all. A remount

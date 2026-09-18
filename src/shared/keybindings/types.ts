@@ -114,6 +114,9 @@ export type KeybindingActionId =
   | 'terminal.splitRight'
   | 'terminal.splitDown'
   | 'terminal.switchInputSource'
+  | 'pane.toggleDeck'
+  | 'pane.focusNext'
+  | 'pane.focusPrevious'
   | PluginKeybindingActionId
 
 export type KeybindingOverrides = Partial<Record<KeybindingActionId, string[]>>

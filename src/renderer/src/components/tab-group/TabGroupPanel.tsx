@@ -1,23 +1,23 @@
 import { Suspense, useMemo } from 'react'
 import { lazyWithRetry as lazy } from '@/lib/lazy-with-retry'
 import { useDroppable } from '@dnd-kit/core'
-import { Ellipsis, X } from 'lucide-react'
 import { useAppStore } from '../../store'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger
-} from '@/components/ui/dropdown-menu'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import TabBar from '../tab-bar/TabBar'
+import { TabGroupPaneActionsMenu } from './TabGroupPaneActionsMenu'
 
 import { TabBarQuickCommandsButton } from '../tab-bar/TabBarQuickCommandsButton'
 import { useTabGroupWorkspaceModel } from './useTabGroupWorkspaceModel'
 import { closeTerminalTab } from '../terminal/terminal-tab-actions'
 import { resolveGroupTabFromVisibleId } from './tab-group-visible-id'
 import { getTabPaneBodyDroppableId, type HoveredTabInsertion } from './useTabDragSplit'
-import { tabGroupBodyAnchorName } from './tab-group-body-anchor'
+import {
+  isDeckCardHostedTab,
+  isOverlayHostedTab,
+  tabGroupBodyAnchorName,
+  tabPaneAnchorName,
+  tabPaneOverlayId
+} from './tab-group-body-anchor'
+import TabGroupDeckLayout from './TabGroupDeckLayout'
 import { translate } from '@/i18n/i18n'
 import type { TabGroup } from '../../../../shared/tab-types'
 import type { ClientHostedBrowserRow } from '../../../../shared/client-hosted-browser-rows'
@@ -43,7 +43,8 @@ export default function TabGroupPanel({
   reserveClosedExplorerToggleSpace,
   reserveCollapsedSidebarHeaderSpace,
   isTabDragActive = false,
-  hoveredTabInsertion = null
+  hoveredTabInsertion = null,
+  deckModeActive = false
 }: {
   groupId: string
   worktreeId: string
@@ -60,6 +61,8 @@ export default function TabGroupPanel({
   reserveCollapsedSidebarHeaderSpace: boolean
   isTabDragActive?: boolean
   hoveredTabInsertion?: HoveredTabInsertion | null
+  /** True while this panel is the big slot of an active card-deck layout. */
+  deckModeActive?: boolean
 }): React.JSX.Element {
   const rightSidebarOpen = useAppStore((state) => state.rightSidebarOpen)
   const sidebarOpen = useAppStore((state) => state.sidebarOpen)
@@ -96,10 +99,47 @@ export default function TabGroupPanel({
   // Why: per-group anchor-name lets the worktree-level overlay position panes via CSS anchor positioning, so moving a tab between groups re-targets the anchor instead of remounting xterm (loses alt-screen TUI state) or reloading `<webview>`.
   const bodyAnchorName = tabGroupBodyAnchorName(groupId)
   // Why: memoize so a fresh style object each render doesn't break downstream memoization keyed on referential equality.
-  const bodyAnchorStyle = useMemo(
-    () => ({ anchorName: bodyAnchorName }) as React.CSSProperties,
-    [bodyAnchorName]
-  )
+  // Non-deck bodies claim every tab's per-tab anchor (all overlays stack over
+  // the one body). A deck body yields the active tab's claim to the stage and
+  // the card-hosted tabs' claims to their rail cards, but keeps backing the
+  // rest (background terminals, whose cards show a mirror) so their hidden
+  // overlay still has a valid anchor to measure against.
+  const bodyAnchorStyle = useMemo(() => {
+    const anchorNames = [bodyAnchorName]
+    for (const tab of model.groupTabs) {
+      if (deckModeActive && (tab.id === activeTab?.id || isDeckCardHostedTab(tab))) {
+        continue
+      }
+      anchorNames.push(tabPaneAnchorName(tabPaneOverlayId(tab)))
+    }
+    return { anchorName: anchorNames.join(', ') } as React.CSSProperties
+  }, [activeTab?.id, bodyAnchorName, deckModeActive, model.groupTabs])
+  // Why: the active tab's real surface shows large in the deck's main stage
+  // instead of a rail card — overlay-hosted tabs claim the stage's per-tab
+  // anchor; editor-like tabs render inline via the same EditorPanel used
+  // outside deck mode.
+  const activeOverlayTabId =
+    activeTab && isOverlayHostedTab(activeTab) ? tabPaneOverlayId(activeTab) : null
+  const editorStageContent =
+    activeTab && !isOverlayHostedTab(activeTab) ? (
+      <div className="absolute inset-0 flex min-h-0 min-w-0">
+        {/* Why: split groups render editor content in a plain relative pane body, not the legacy Terminal.tsx flex column. */}
+        <Suspense
+          fallback={
+            <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+              {translate('auto.components.tab.group.TabGroupPanel.814fb04c43', 'Loading editor...')}
+            </div>
+          }
+        >
+          <EditorPanel
+            activeFileId={activeTab.entityId}
+            activeViewStateId={activeTab.id}
+            isVisible={isVisible}
+            isCmdSaveOwner={isFocused}
+          />
+        </Suspense>
+      </div>
+    ) : null
 
   const tabBar = (
     <TabBar
@@ -217,8 +257,6 @@ export default function TabGroupPanel({
     />
   )
 
-  const menuButtonClassName =
-    'my-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
   // Why: focused-only so quick commands and Close split pane stay with the active pane and unfocused strips stay compact.
   const focusedActionChromeClassName = `flex shrink-0 items-center gap-0.5 overflow-hidden transition-[opacity] duration-150 ${
     isFocused ? 'ml-1.5 pointer-events-auto opacity-100' : 'pointer-events-none opacity-0 w-0'
@@ -274,47 +312,11 @@ export default function TabGroupPanel({
                 <TabBarQuickCommandsButton worktreeId={worktreeId} groupId={groupId} />
               ) : null}
               {isFocused && hasSplitGroups ? (
-                <Tooltip>
-                  <DropdownMenu modal={false}>
-                    <TooltipTrigger asChild>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          type="button"
-                          aria-label={translate(
-                            'auto.components.tab.group.TabGroupPanel.9acaf92093',
-                            'Pane Actions'
-                          )}
-                          onClick={(event) => {
-                            event.stopPropagation()
-                          }}
-                          className={menuButtonClassName}
-                        >
-                          <Ellipsis className="size-4" />
-                        </button>
-                      </DropdownMenuTrigger>
-                    </TooltipTrigger>
-                    <DropdownMenuContent align="end" side="bottom" sideOffset={4}>
-                      <DropdownMenuItem
-                        variant="destructive"
-                        onSelect={() => {
-                          commands.closeGroup()
-                        }}
-                      >
-                        <X className="size-4" />
-                        {translate(
-                          'auto.components.tab.group.TabGroupPanel.closePaneColumn',
-                          'Close split pane'
-                        )}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                  <TooltipContent side="bottom" sideOffset={6}>
-                    {translate(
-                      'auto.components.tab.group.TabGroupPanel.9acaf92093',
-                      'Pane Actions'
-                    )}
-                  </TooltipContent>
-                </Tooltip>
+                <TabGroupPaneActionsMenu
+                  deckModeActive={deckModeActive}
+                  onToggleCardDeck={commands.togglePaneCardDeck}
+                  onCloseGroup={commands.closeGroup}
+                />
               ) : null}
             </div>
           </div>
@@ -347,32 +349,19 @@ export default function TabGroupPanel({
             data-contextual-tour-target="workspace-agent-terminal-tip"
           />
         ) : null}
-        {activeTab &&
-          activeTab.contentType !== 'terminal' &&
-          activeTab.contentType !== 'agent-session' &&
-          activeTab.contentType !== 'browser' &&
-          activeTab.contentType !== 'simulator' && (
-            <div className="absolute inset-0 flex min-h-0 min-w-0">
-              {/* Why: split groups render editor content in a plain relative pane body, not the legacy Terminal.tsx flex column. */}
-              <Suspense
-                fallback={
-                  <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-                    {translate(
-                      'auto.components.tab.group.TabGroupPanel.814fb04c43',
-                      'Loading editor...'
-                    )}
-                  </div>
-                }
-              >
-                <EditorPanel
-                  activeFileId={activeTab.entityId}
-                  activeViewStateId={activeTab.id}
-                  isVisible={isVisible}
-                  isCmdSaveOwner={isFocused}
-                />
-              </Suspense>
-            </div>
-          )}
+        {deckModeActive ? (
+          // Why: deck mode splits the pane body into a main stage (the active
+          // tab's real surface, at full size) and a resizable rail of every
+          // tab as a card.
+          <TabGroupDeckLayout
+            groupId={groupId}
+            worktreeId={worktreeId}
+            activeOverlayTabId={activeOverlayTabId}
+            stageContent={editorStageContent}
+          />
+        ) : (
+          editorStageContent
+        )}
 
         {/* Why: terminal/browser/simulator/structured-chat panes render at the worktree level; tab activation only changes overlay visibility and never remounts a live surface. */}
       </div>

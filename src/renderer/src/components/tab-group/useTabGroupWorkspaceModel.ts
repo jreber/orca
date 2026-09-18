@@ -40,6 +40,7 @@ export function useTabGroupWorkspaceModel({
   )
 
   const focusGroup = useAppStore((state) => state.focusGroup)
+  const togglePaneCardDeck = useAppStore((state) => state.togglePaneCardDeck)
   const makePreviewFilePermanent = useAppStore((state) => state.makePreviewFilePermanent)
   const pinFile = useAppStore((state) => state.pinFile)
   const setTabCustomTitle = useAppStore((state) => state.setTabCustomTitle)
@@ -78,7 +79,7 @@ export function useTabGroupWorkspaceModel({
     activateEditor,
     activateBrowser,
     activateAgentSession
-  } = useTabGroupActivationCommands({ groupId, worktreeId, groupTabs, worktreeState })
+  } = useTabGroupActivationCommands({ groupId, worktreeId, groupTabs })
 
   const creationCommands = useTabGroupCreationCommands({ groupId, worktreeId, worktreeState })
 
@@ -111,6 +112,9 @@ export function useTabGroupWorkspaceModel({
       pinFile,
       setTabColor,
       setTabCustomTitle,
+      togglePaneCardDeck: () => {
+        togglePaneCardDeck(worktreeId)
+      },
       toggleTerminalPaneExpand
     }
   }

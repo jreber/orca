@@ -10,6 +10,8 @@ export function createTerminalEphemeralActions(
   TerminalSlice,
   | 'markDefaultTerminalTabsApplied'
   | 'setHydrationSucceeded'
+  | 'togglePaneCardDeck'
+  | 'setTabGroupDeckWidth'
   | 'setRecentQuickCommandForGroup'
   | 'claimAutomaticAgentResume'
   | 'seedNativeChatLaunchPrompt'
@@ -41,6 +43,23 @@ export function createTerminalEphemeralActions(
       }),
     setHydrationSucceeded: (value) => {
       set({ hydrationSucceeded: value })
+    },
+    togglePaneCardDeck: (worktreeId) => {
+      set((s) => {
+        // Why: a ghost worktree id must not mint a flag the UI can never render or purge on teardown.
+        if (!s.layoutByWorktree[worktreeId]) {
+          return {}
+        }
+        return {
+          paneCardDeckByWorktree: {
+            ...s.paneCardDeckByWorktree,
+            [worktreeId]: s.paneCardDeckByWorktree[worktreeId] !== true
+          }
+        }
+      })
+    },
+    setTabGroupDeckWidth: (width) => {
+      set({ tabGroupDeckWidth: width })
     },
     setRecentQuickCommandForGroup: (groupId, quickCommandId) => {
       set((s) => ({

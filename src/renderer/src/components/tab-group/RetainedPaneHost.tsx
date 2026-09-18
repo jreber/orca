@@ -1,6 +1,10 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { SYNC_FIT_PANES_EVENT } from '@/constants/terminal'
-import { tabGroupBodyAnchorName } from './tab-group-body-anchor'
+import {
+  TAB_PANE_ANCHOR_DATASET,
+  tabGroupBodyAnchorName,
+  tabPaneAnchorName
+} from './tab-group-body-anchor'
 
 const HAS_CSS_ANCHOR_POSITIONING =
   typeof CSS !== 'undefined' &&
@@ -27,10 +31,15 @@ type MeasuredFallbackRect = {
 
 type RetainedPaneHostProps = {
   groupId: string | undefined
+  /**
+   * Why: deck cards claim per-tab anchors, so a set overlayTabId retargets this
+   * host from its group's body to that tab's own card surface.
+   */
+  overlayTabId?: string
   isVisible: boolean
   measureWhileHidden?: boolean
   fitTerminal?: boolean
-  onFocusOwningGroup?: (groupId: string) => void
+  onFocusOwningTab?: (groupId: string | undefined, overlayTabId?: string) => void
   children: React.ReactNode
   'data-terminal-overlay-tab-id'?: string
   'data-structured-agent-session-overlay-tab-id'?: string
@@ -38,14 +47,21 @@ type RetainedPaneHostProps = {
 
 export function RetainedPaneHost({
   groupId,
+  overlayTabId,
   isVisible,
   measureWhileHidden = false,
   fitTerminal = false,
-  onFocusOwningGroup,
+  onFocusOwningTab,
   children,
   ...identity
 }: RetainedPaneHostProps): React.JSX.Element {
-  const anchorName = groupId !== undefined ? tabGroupBodyAnchorName(groupId) : undefined
+  // Why: deck cards claim per-tab anchors so every carded tab paints its real
+  // retained surface; without one, fall back to the owning group's body.
+  const anchorName = overlayTabId
+    ? tabPaneAnchorName(overlayTabId)
+    : groupId !== undefined
+      ? tabGroupBodyAnchorName(groupId)
+      : undefined
   const overlayRef = useRef<HTMLDivElement | null>(null)
   const [measuredFallbackRect, setMeasuredFallbackRect] = useState<MeasuredFallbackRect | null>(
     null
@@ -56,6 +72,16 @@ export function RetainedPaneHost({
     }
 
     const findBody = (): HTMLElement | null => {
+      // Why: deck cards claim the per-tab anchor element; prefer it over the
+      // group body so the fallback paints into the card, not the mosaic.
+      if (overlayTabId) {
+        const card = document.querySelector<HTMLElement>(
+          `[${TAB_PANE_ANCHOR_DATASET}="${overlayTabId}"]`
+        )
+        if (card) {
+          return card
+        }
+      }
       for (const candidate of document.querySelectorAll<HTMLElement>('[data-tab-group-body-id]')) {
         if (candidate.dataset.tabGroupBodyId === groupId) {
           return candidate
@@ -103,11 +129,15 @@ export function RetainedPaneHost({
       resizeObserver.observe(parent)
     }
     window.addEventListener('resize', updateRect)
+    // Why: the deck mosaic scrolls cards without resizing them; capture-phase
+    // scroll keeps the measured rect glued to the card as it moves.
+    window.addEventListener('scroll', updateRect, true)
     return () => {
       resizeObserver.disconnect()
       window.removeEventListener('resize', updateRect)
+      window.removeEventListener('scroll', updateRect, true)
     }
-  }, [anchorName, groupId, isVisible])
+  }, [anchorName, groupId, overlayTabId, isVisible])
 
   useLayoutEffect(() => {
     if (!fitTerminal || !isVisible || !anchorName) {
@@ -184,10 +214,10 @@ export function RetainedPaneHost({
     [anchorName, isVisible, measuredFallbackRect, measureWhileHidden]
   )
   const focusGroup = useCallback(() => {
-    if (groupId !== undefined && onFocusOwningGroup) {
-      onFocusOwningGroup(groupId)
+    if (onFocusOwningTab) {
+      onFocusOwningTab(groupId, overlayTabId)
     }
-  }, [groupId, onFocusOwningGroup])
+  }, [groupId, overlayTabId, onFocusOwningTab])
 
   return (
     <div
@@ -196,6 +226,10 @@ export function RetainedPaneHost({
       // Pane-local layers cannot compete with app notifications or escape their split rectangle.
       className="isolate z-10 min-h-0 min-w-0 overflow-hidden"
       data-retained-pane-host=""
+      // Why: a type-agnostic hook (terminal/browser/simulator/agent-session
+      // all differ in their own identity dataset) so the deck's FLIP
+      // transition can find this overlay by tab id alone.
+      data-retained-pane-overlay-id={overlayTabId}
       {...identity}
       inert={!isVisible}
       aria-hidden={!isVisible}

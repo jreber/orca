@@ -126,6 +126,8 @@ export function buildWorktreePurgeState(
     // Why: bulk/hydration purge runs no terminal teardown, so it must drop the per-tab pane-expand flags itself.
     expandedPaneByTabId: omitByTabId(s.expandedPaneByTabId),
     canExpandPaneByTabId: omitByTabId(s.canExpandPaneByTabId),
+    // Why: the card-deck toggle is worktree-scoped ephemeral UI; drop it here so a removed worktree can't leave a phantom flag.
+    paneCardDeckByWorktree: omitByWorktree(s.paneCardDeckByWorktree),
     // Why: these per-tab/per-pty terminal+agent maps evict on the single removeWorktree teardown path; the bulk reconcile / remove-project / hydration-stale paths run no teardown, so without these each strands an entry per tab/pane of externally-removed worktrees.
     lastKnownRelayPtyIdByTabId: omitByTabId(s.lastKnownRelayPtyIdByTabId),
     // Why: liveness-authoritative reconnect maps (orphan sweep reads them); drop purged tabs' entries here too so a re-materialized id can't inherit phantom liveness.

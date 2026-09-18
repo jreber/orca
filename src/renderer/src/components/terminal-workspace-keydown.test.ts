@@ -59,6 +59,14 @@ vi.mock('@/lib/structured-agent-session-launch', () => ({
   cancelStructuredAgentLaunch: mocks.cancelStructuredAgentLaunch
 }))
 vi.mock('@/lib/worktree-runtime-owner', () => ({ getRuntimeEnvironmentIdForWorktree: () => null }))
+vi.mock('@/lib/focus-terminal-tab-surface', () => ({ focusTerminalTabSurface: vi.fn() }))
+vi.mock('@/lib/structured-agent-session-tab-activation', () => ({
+  activateStructuredAgentSessionTab: vi.fn()
+}))
+vi.mock('../runtime/web-runtime-session', () => ({
+  activateWebRuntimeSessionTab: vi.fn(),
+  isWebRuntimeSessionActive: () => false
+}))
 vi.mock('@/runtime/runtime-worktree-selector', () => ({
   toRuntimeWorktreeSelector: (id: string) => `id:${id}`
 }))
@@ -329,5 +337,89 @@ describe('shared tab navigation routing', () => {
     expect(switchFloatingWorkspaceTab).toHaveBeenCalledTimes(2)
     expect(switchFloatingWorkspaceTab).toHaveBeenLastCalledWith(mocks.state, 1, 'all-types')
     expect(handleSwitchTabAcrossAllTypes).not.toHaveBeenCalled()
+  })
+})
+
+describe('card deck shortcuts', () => {
+  const worktreeId = controller.activeWorktreeId!
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.floatingFocused = false
+    mocks.targetInsideFloatingPanel = false
+    mocks.state = {
+      activeWorktreeId: worktreeId,
+      togglePaneCardDeck: vi.fn(),
+      focusGroup: vi.fn(),
+      activateTab: vi.fn(),
+      setActiveTab: vi.fn(),
+      setActiveTabType: vi.fn(),
+      setActiveFile: vi.fn(),
+      paneCardDeckByWorktree: { [worktreeId]: true },
+      activeGroupIdByWorktree: { [worktreeId]: 'left-group' },
+      groupsByWorktree: {
+        [worktreeId]: [{ id: 'left-group', activeTabId: 'tab-left-a' }]
+      },
+      unifiedTabsByWorktree: {
+        [worktreeId]: [
+          { id: 'tab-left-a', entityId: 'term-a', groupId: 'left-group', contentType: 'terminal' },
+          { id: 'tab-left-b', entityId: 'term-b', groupId: 'left-group', contentType: 'terminal' },
+          { id: 'tab-left-c', entityId: 'term-c', groupId: 'left-group', contentType: 'terminal' }
+        ]
+      }
+    }
+  })
+
+  function press(key: string, options: KeyboardEventInit = {}): KeyboardEvent {
+    const event = new KeyboardEvent('keydown', { key, cancelable: true, ...options })
+    handleTerminalWorkspaceKeyDown(event, controller, 'darwin')
+    return event
+  }
+
+  it('toggles the deck via Mod+Shift+K', () => {
+    const event = press('k', { metaKey: true, shiftKey: true })
+    expect(event.defaultPrevented).toBe(true)
+    expect(mocks.state.togglePaneCardDeck).toHaveBeenCalledWith(worktreeId)
+  })
+
+  it('rotates to the next tab in the focused group while the deck is on', () => {
+    const event = press('PageDown', { metaKey: true, shiftKey: true })
+    expect(event.defaultPrevented).toBe(true)
+    expect(mocks.state.activateTab).toHaveBeenCalledWith('tab-left-b')
+    expect(mocks.state.setActiveTab).toHaveBeenCalledWith('term-b')
+    expect(mocks.state.setActiveTabType).toHaveBeenCalledWith('terminal')
+  })
+
+  it('rotates to the previous tab and wraps from the first', () => {
+    const event = press('PageUp', { metaKey: true, shiftKey: true })
+    expect(event.defaultPrevented).toBe(true)
+    expect(mocks.state.activateTab).toHaveBeenCalledWith('tab-left-c')
+  })
+
+  it('rotates by the tab-strip order, not unifiedTabs insertion order', () => {
+    mocks.state.groupsByWorktree = {
+      [worktreeId]: [
+        {
+          id: 'left-group',
+          activeTabId: 'tab-left-c',
+          tabOrder: ['tab-left-c', 'tab-left-a', 'tab-left-b']
+        }
+      ]
+    }
+
+    const next = press('PageDown', { metaKey: true, shiftKey: true })
+    expect(next.defaultPrevented).toBe(true)
+    expect(mocks.state.activateTab).toHaveBeenCalledWith('tab-left-a')
+
+    vi.clearAllMocks()
+    const previous = press('PageUp', { metaKey: true, shiftKey: true })
+    expect(previous.defaultPrevented).toBe(true)
+    expect(mocks.state.activateTab).toHaveBeenCalledWith('tab-left-b')
+  })
+
+  it('keeps the rotation chords inert outside deck mode', () => {
+    mocks.state.paneCardDeckByWorktree = {}
+    const event = press('PageDown', { metaKey: true, shiftKey: true })
+    expect(event.defaultPrevented).toBe(false)
+    expect(mocks.state.activateTab).not.toHaveBeenCalled()
   })
 })
