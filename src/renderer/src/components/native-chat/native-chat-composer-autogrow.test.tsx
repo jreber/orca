@@ -55,6 +55,7 @@ function TestField({
       autocomplete={{ mode: 'none' }}
       activeSuggestion={0}
       notice={null}
+      annotations={[]}
       imageAttachments={imageAttachments}
       sendButtonDisabled={false}
       isWorking={false}
@@ -72,6 +73,7 @@ function TestField({
       onChoosePickerItem={vi.fn()}
       onRetrySkills={vi.fn()}
       onAcceptMention={vi.fn()}
+      onRemoveAnnotation={vi.fn()}
       onRemoveImageAttachment={vi.fn()}
       onAttach={vi.fn()}
       onDictationToggle={vi.fn()}

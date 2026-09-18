@@ -61,6 +61,7 @@ export function NativeChatStructuredSession(
   const composerRef = useRef<NativeChatComposerHandle>(null)
   const paneCommands = useStructuredNativeChatPaneCommands({
     tabId: props.tabId,
+    paneKey,
     groupId: props.groupId,
     isVisible: props.isVisible,
     rootRef,

@@ -16,6 +16,8 @@ import type {
 } from '../../../../shared/native-chat-session-options'
 import type { NativeChatOptionPickerRequest } from './native-chat-composer-types'
 import { NativeChatImageAttachmentPreview } from './NativeChatImageAttachmentPreview'
+import { NativeChatAnnotationChip } from './NativeChatAnnotationChip'
+import type { NativeChatAnnotation } from './native-chat-annotation-queue'
 
 export type NativeChatComposerFieldProps = {
   /** Pane identity published to the drop pipeline so a native file drop lands
@@ -29,6 +31,7 @@ export type NativeChatComposerFieldProps = {
   autocomplete: ComposerAutocomplete
   activeSuggestion: number
   notice: string | null
+  annotations: readonly NativeChatAnnotation[]
   imageAttachments: readonly NativeChatComposerImageAttachment[]
   sendButtonDisabled: boolean
   isWorking: boolean
@@ -46,6 +49,7 @@ export type NativeChatComposerFieldProps = {
   onChoosePickerItem: (item: NativeChatPickerItem) => void
   onRetrySkills: () => void
   onAcceptMention: () => void
+  onRemoveAnnotation: (id: string) => void
   onRemoveImageAttachment: (id: string) => void
   onAttach: () => void
   onDictationToggle: () => void
@@ -101,6 +105,7 @@ export function NativeChatComposerField({
   autocomplete,
   activeSuggestion,
   notice,
+  annotations,
   imageAttachments,
   sendButtonDisabled,
   isWorking,
@@ -118,6 +123,7 @@ export function NativeChatComposerField({
   onChoosePickerItem,
   onRetrySkills,
   onAcceptMention,
+  onRemoveAnnotation,
   onRemoveImageAttachment,
   onAttach,
   onDictationToggle,
@@ -203,6 +209,17 @@ export function NativeChatComposerField({
               '[contain:paint]'
             )}
           >
+            {annotations.length > 0 ? (
+              <div className="mb-2 flex flex-wrap gap-2 px-1 pt-1.5">
+                {annotations.map((annotation) => (
+                  <NativeChatAnnotationChip
+                    key={annotation.id}
+                    annotation={annotation}
+                    onRemove={onRemoveAnnotation}
+                  />
+                ))}
+              </div>
+            ) : null}
             {imageAttachments.length > 0 ? (
               <div className="mb-2 flex flex-wrap gap-2 px-1 pt-1.5">
                 {imageAttachments.map((attachment) => (

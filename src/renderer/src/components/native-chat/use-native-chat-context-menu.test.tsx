@@ -3,7 +3,7 @@
  */
 import React, { createRef, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { cleanup, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   emptyNativeChatContextMenuActions,
@@ -11,9 +11,10 @@ import {
   type NativeChatContextMenuActions
 } from './use-native-chat-context-menu'
 
-type ItemProps = { onSelect?: () => void; children?: ReactNode }
+type ItemProps = { onSelect?: () => void; children?: ReactNode; disabled?: boolean }
 
 const items = vi.hoisted(() => ({ list: [] as ItemProps[] }))
+const mocks = vi.hoisted(() => ({ addNativeChatAnnotation: vi.fn() }))
 
 vi.mock('@/components/ui/dropdown-menu', () => ({
   DropdownMenu: ({ children }: { children?: ReactNode }) => children,
@@ -31,6 +32,17 @@ vi.mock('@/components/ui/dropdown-menu', () => ({
   DropdownMenuTrigger: ({ children }: { children?: ReactNode }) => children
 }))
 
+vi.mock('@/components/ui/popover', () => ({
+  Popover: ({ children, open }: { children?: ReactNode; open: boolean }) =>
+    open ? children : null,
+  PopoverAnchor: ({ children }: { children?: ReactNode }) => children ?? null,
+  PopoverContent: ({ children }: { children?: ReactNode }) => <div>{children}</div>
+}))
+
+vi.mock('./native-chat-annotation-queue', () => ({
+  addNativeChatAnnotation: mocks.addNativeChatAnnotation
+}))
+
 vi.mock('lucide-react', () => {
   const Icon = () => null
   return {
@@ -45,6 +57,7 @@ vi.mock('lucide-react', () => {
     PanelRightClose: Icon,
     Pencil: Icon,
     SquareTerminal: Icon,
+    StickyNote: Icon,
     X: Icon
   }
 })
@@ -56,6 +69,37 @@ vi.mock('@/i18n/i18n', () => ({
 vi.mock('@/components/tab-bar/TabWorkspaceLayoutMenuSection', () => ({
   TabWorkspaceLayoutMenuSection: () => 'Move Tab to Split'
 }))
+
+/** Fake selection anchored inside `root`, matching what getSelection() returns
+ *  for a real user text selection. */
+function selectionWithinRoot(root: HTMLElement, text: string): Selection {
+  return {
+    isCollapsed: false,
+    anchorNode: root,
+    focusNode: root,
+    toString: () => text,
+    rangeCount: 1,
+    getRangeAt: () => ({
+      getBoundingClientRect: () => ({
+        left: 5,
+        top: 0,
+        right: 5,
+        bottom: 15,
+        width: 0,
+        height: 15,
+        x: 5,
+        y: 0,
+        toJSON: () => ({})
+      })
+    })
+  } as unknown as Selection
+}
+
+function lastItemLabeled(label: string): ItemProps | undefined {
+  return items.list
+    .toReversed()
+    .find((candidate) => childrenText(candidate.children).startsWith(label))
+}
 
 function childrenText(children: ReactNode): string {
   return React.Children.toArray(children)
@@ -73,15 +117,18 @@ function childrenText(children: ReactNode): string {
 function Harness({
   onSwitchToTerminal,
   structured = false,
-  enabled = true
+  enabled = true,
+  paneKey = 'tab-1:leaf-1'
 }: {
   onSwitchToTerminal?: () => void
   structured?: boolean
   enabled?: boolean
+  paneKey?: string
 }) {
   const rootRef = createRef<HTMLDivElement>()
-  const { menu } = useNativeChatContextMenu({
+  const { menu, onContextMenuCapture } = useNativeChatContextMenu({
     rootRef,
+    paneKey,
     enabled,
     onSwitchToTerminal,
     showTerminalPaneActions: !structured,
@@ -91,17 +138,23 @@ function Harness({
       onPaste: vi.fn()
     } satisfies NativeChatContextMenuActions
   })
-  return menu
+  return (
+    <div ref={rootRef} data-testid="native-chat-root" onContextMenuCapture={onContextMenuCapture}>
+      {menu}
+    </div>
+  )
 }
 
 describe('useNativeChatContextMenu', () => {
   beforeEach(() => {
     items.list = []
+    mocks.addNativeChatAnnotation.mockClear()
   })
 
   afterEach(() => {
     cleanup()
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
 
   it('restores the bridge switch-to-terminal action when supplied', () => {
@@ -154,5 +207,51 @@ describe('useNativeChatContextMenu', () => {
     getSelection.mockClear()
     document.dispatchEvent(new Event('selectionchange'))
     expect(getSelection).not.toHaveBeenCalled()
+  })
+
+  it('gates Annotate on a selection and saves the note via the queue on Enter', () => {
+    vi.stubGlobal('navigator', { userAgent: 'Macintosh' })
+    const getSelection = vi.spyOn(window, 'getSelection').mockReturnValue(null)
+
+    render(<Harness paneKey="tab-1:leaf-1" />)
+    const root = screen.getByTestId('native-chat-root')
+
+    expect(lastItemLabeled('Annotate')?.disabled).toBe(true)
+
+    getSelection.mockReturnValue(selectionWithinRoot(root, 'quoted response text'))
+    fireEvent.contextMenu(root, { clientX: 12, clientY: 34 })
+
+    const annotateItem = lastItemLabeled('Annotate')
+    expect(annotateItem?.disabled).toBe(false)
+
+    act(() => annotateItem?.onSelect?.())
+
+    const input = screen.getByPlaceholderText('Add a note…')
+    fireEvent.change(input, { target: { value: 'this is wrong' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(mocks.addNativeChatAnnotation).toHaveBeenCalledWith(
+      'tab-1:leaf-1',
+      'quoted response text',
+      'this is wrong'
+    )
+    expect(screen.queryByPlaceholderText('Add a note…')).toBeNull()
+  })
+
+  it('opens the note popover from the keyboard chord and cancels on Escape without saving', () => {
+    vi.stubGlobal('navigator', { userAgent: 'Macintosh' })
+    const getSelection = vi.spyOn(window, 'getSelection').mockReturnValue(null)
+
+    render(<Harness paneKey="tab-2:leaf-1" />)
+    const root = screen.getByTestId('native-chat-root')
+    getSelection.mockReturnValue(selectionWithinRoot(root, 'quoted via chord'))
+
+    fireEvent.keyDown(document, { key: 'h', metaKey: true, shiftKey: true })
+
+    const input = screen.getByPlaceholderText('Add a note…')
+    fireEvent.keyDown(input, { key: 'Escape' })
+
+    expect(screen.queryByPlaceholderText('Add a note…')).toBeNull()
+    expect(mocks.addNativeChatAnnotation).not.toHaveBeenCalled()
   })
 })

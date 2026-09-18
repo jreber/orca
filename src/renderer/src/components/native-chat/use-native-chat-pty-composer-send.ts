@@ -41,20 +41,20 @@ export function useNativeChatPtyComposerSend(args: {
   clearSkillOrigin: () => void
   clearImageAttachments: () => void
   setNotice: Dispatch<SetStateAction<string | null>>
-}): () => void {
+}): () => boolean {
   return useCallback(() => {
     const text = args.draft
     const imagePaths = args.imageAttachments.map((attachment) => attachment.path)
     if ((text.trim() === '' && imagePaths.length === 0) || args.disabled) {
-      return
+      return false
     }
     // Why: keep option-command and prompt writes from interleaving on the PTY input line.
     if (args.isDispatchingSessionOption) {
-      return
+      return false
     }
     const target = args.resolveTarget()
     if (!target) {
-      return
+      return false
     }
     const classification = args.classifySend(text)
     const { sendOptions } = resolveNativeChatLaunchDraftSend({
@@ -109,5 +109,6 @@ export function useNativeChatPtyComposerSend(args: {
     args.clearImageAttachments()
     args.setNotice(null)
     useAppStore.getState().clearNativeChatLaunchDraft(args.terminalTabId)
+    return true
   }, [args])
 }

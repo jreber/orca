@@ -35,26 +35,26 @@ export function useNativeChatStructuredComposerSend({
 }: UseNativeChatStructuredComposerSendArgs): (
   text: string,
   attachments?: readonly NativeChatComposerImageAttachment[]
-) => void {
+) => Promise<boolean> {
   const composition = useRef({ draft, imageAttachments })
   useLayoutEffect(() => {
     composition.current = { draft, imageAttachments }
   }, [draft, imageAttachments])
   return useCallback(
-    (text: string, attachments = imageAttachments): void => {
+    (text: string, attachments = imageAttachments): Promise<boolean> => {
       if (!structuredTransport) {
-        return
+        return Promise.resolve(false)
       }
       if (attachments.length > 0 && isStructuredAgentSessionComposerCommand(text, agent)) {
         structuredTransport.onError('Remove attachments before using a chat-session command.')
-        return
+        return Promise.resolve(false)
       }
       const submitted = composition.current
-      void dispatchNativeChatStructuredComposerText(structuredTransport, text, attachments)
+      return dispatchNativeChatStructuredComposerText(structuredTransport, text, attachments)
         .then(({ accepted, error }) => {
           structuredTransport.onError(error)
           if (!accepted) {
-            return
+            return false
           }
           emitNativeChatMessageSent({ agent, runtime: structuredTransport.runtime })
           // A real user send is a takeover, exactly as typing into a worker's pane is. Only past
@@ -70,16 +70,18 @@ export function useNativeChatStructuredComposerSend({
             (composition.current.draft !== submitted.draft ||
               composition.current.imageAttachments !== submitted.imageAttachments)
           ) {
-            return
+            return true
           }
           setDraft('')
           setCaret(0)
           clearSkillOrigin()
           clearImageAttachments()
+          return true
         })
-        .catch((error) =>
+        .catch((error) => {
           structuredTransport.onError(error instanceof Error ? error.message : String(error))
-        )
+          return false
+        })
     },
     [
       agent,

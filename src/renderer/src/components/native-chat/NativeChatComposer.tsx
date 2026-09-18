@@ -1,6 +1,7 @@
 import type { NativeChatComposerInput } from './native-chat-composer-input'
 import { forwardRef, useCallback, useImperativeHandle, useState } from 'react'
 import { useAppStore } from '../../store'
+import { useNativeChatComposerAnnotations } from './use-native-chat-composer-annotations'
 import { sendRuntimePtyInput } from '@/runtime/runtime-terminal-inspection'
 import { getSettingsForAgentTabRuntimeOwner } from '@/lib/agent-paste-draft'
 import {
@@ -79,6 +80,8 @@ const NativeChatComposerPane = forwardRef<NativeChatComposerHandle, NativeChatCo
     // Why: local, SSH, and runtime reconnects can replace or temporarily clear
     // the PTY id. Pane identity is the stable ownership key for unsent input.
     const { draft, setDraft } = useNativeChatDraft(paneKey)
+    const { annotations, draftWithAnnotations, onRemoveAnnotation, clearAnnotations } =
+      useNativeChatComposerAnnotations(paneKey, draft)
     const [caret, setCaret] = useState(draft.length)
     useNativeChatLaunchDraftAdoption({
       terminalTabId,
@@ -266,7 +269,7 @@ const NativeChatComposerPane = forwardRef<NativeChatComposerHandle, NativeChatCo
 
     const sendPty = useNativeChatPtyComposerSend({
       agent,
-      draft,
+      draft: draftWithAnnotations,
       imageAttachments,
       disabled,
       isDispatchingSessionOption,
@@ -292,13 +295,19 @@ const NativeChatComposerPane = forwardRef<NativeChatComposerHandle, NativeChatCo
         return
       }
       if (!structuredTransport) {
-        sendPty()
-      } else if ((draft.trim() !== '' || imageAttachments.length > 0) && !disabled) {
-        sendStructured(draft, imageAttachments)
+        if (sendPty()) {
+          clearAnnotations()
+        }
+      } else if ((draftWithAnnotations.trim() !== '' || imageAttachments.length > 0) && !disabled) {
+        // Clear only once accepted — a rejected send must keep the queue.
+        void sendStructured(draftWithAnnotations, imageAttachments).then(
+          (ok) => ok && clearAnnotations()
+        )
       }
     }, [
+      clearAnnotations,
       disabled,
-      draft,
+      draftWithAnnotations,
       hasPendingAttachment,
       imageAttachments,
       sendPty,
@@ -337,7 +346,7 @@ const NativeChatComposerPane = forwardRef<NativeChatComposerHandle, NativeChatCo
     const dispatchPickerCommand = useCallback(
       (command: Parameters<typeof dispatchPtyPickerCommand>[0]) => {
         if (structuredTransport) {
-          sendStructured(`/${command.name}`)
+          void sendStructured(`/${command.name}`)
           return
         }
         dispatchPtyPickerCommand(command)
@@ -384,6 +393,7 @@ const NativeChatComposerPane = forwardRef<NativeChatComposerHandle, NativeChatCo
         autocomplete={autocomplete}
         activeSuggestion={activeSuggestion}
         notice={notice}
+        annotations={annotations}
         imageAttachments={imageAttachments}
         sendButtonDisabled={sendButtonDisabled}
         isWorking={isWorking}
@@ -420,6 +430,7 @@ const NativeChatComposerPane = forwardRef<NativeChatComposerHandle, NativeChatCo
           textarea?.focus()
           requestAnimationFrame(() => textarea?.setSelectionRange(result.caret, result.caret))
         }}
+        onRemoveAnnotation={onRemoveAnnotation}
         onRemoveImageAttachment={(id) => removeImageAttachment(id)}
         onAttach={pickAttachment}
         onDictationToggle={toggleDictation}

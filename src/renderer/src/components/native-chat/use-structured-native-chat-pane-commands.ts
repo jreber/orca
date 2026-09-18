@@ -14,6 +14,7 @@ import { runNativeChatSplitTarget } from './native-chat-layout-actions'
 
 export function useStructuredNativeChatPaneCommands({
   tabId,
+  paneKey,
   groupId,
   isVisible,
   rootRef,
@@ -21,6 +22,7 @@ export function useStructuredNativeChatPaneCommands({
   terminalPaneActions
 }: {
   tabId: string
+  paneKey: string
   groupId?: string
   isVisible: boolean
   rootRef: RefObject<HTMLDivElement | null>
@@ -31,6 +33,7 @@ export function useStructuredNativeChatPaneCommands({
   const pasteClipboardIntoComposer = useNativeChatPasteBridge({ rootRef, composerRef })
   const contextMenu = useNativeChatContextMenu({
     rootRef,
+    paneKey,
     actions: {
       ...emptyNativeChatContextMenuActions,
       ...terminalPaneActions,
