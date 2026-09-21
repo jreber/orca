@@ -56,6 +56,7 @@ export function SingleSessionApp({ params }: { params: SingleSessionParams }): R
           agent={params.agent}
           target={{ kind: 'environment', environmentId }}
           isVisible
+          isFocusedGroup
         />
       </div>
     </TooltipProvider>

@@ -174,6 +174,8 @@ function ComposerProbe({
           autocomplete={{ mode: 'none' }}
           activeSuggestion={0}
           notice={notice}
+          annotations={[]}
+          onRemoveAnnotation={() => {}}
           imageAttachments={attachments.imageAttachments}
           sendButtonDisabled={false}
           isWorking={false}
