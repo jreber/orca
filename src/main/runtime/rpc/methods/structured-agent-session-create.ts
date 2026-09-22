@@ -26,6 +26,7 @@ import type { StructuredAgentSessionHost } from '../../../native-chat/agent-sess
 import type { StructuredAgentSessionCaller } from '../../../native-chat/agent-session-wire/structured-agent-session-host-types'
 import type { StructuredAgentSessionResumeSource } from '../../../../shared/structured-agent-session-create'
 import type { OrcaRuntimeService } from '../../orca-runtime'
+import { commitStructuredAgentSessionLaunchPrompt } from './agent-launch-structured-prompt'
 import {
   resolveUncommittedStructuredCreate,
   type StructuredCreateRefused
@@ -89,36 +90,86 @@ export async function prepareStructuredAgentSessionCreateForWorktree(args: {
   }
 }
 
+export const STRUCTURED_AGENT_SESSION_CREATE_SEED_TEXT =
+  "You've just been started in this workspace. Wait for the user's first message before doing " +
+  "anything — don't take any action yet, just acknowledge you're ready."
+
 /** The commit half. Past `attach`, a failure no longer proves the session does not exist. */
 export async function commitStructuredAgentSessionCreate(args: {
   runtime: OrcaRuntimeService
   caller: StructuredAgentSessionCaller
   prepared: PreparedStructuredAgentSessionCreate
   activate: boolean
+  /** Send a non-action first turn so the session gets a status (and a dashboard card) before the
+   *  user writes anything. Only for bare chat creates: agent launch and orchestration send their
+   *  own first turn right after create, and a running seed turn would queue theirs — orchestration
+   *  requires its preamble to be accepted, not queued. */
+  seed?: boolean
 }): Promise<AgentSessionMutationResult<AgentSessionAttachResult>> {
   const { prepared } = args
   const result = await prepared.host.attach(args.caller, prepared.attachParams)
-  if (!result.ok || !prepared.tab) {
+  if (!result.ok) {
     return result
   }
-  try {
-    await args.runtime.publishStructuredAgentSessionTab({
-      workspaceId: prepared.tab.workspaceId,
-      sessionId: result.value.sessionId,
-      agent: prepared.tab.agent,
-      activate: args.activate
-    })
-  } catch (error) {
-    console.warn('[agent-session] create committed before tab publication failed', error)
-    return {
-      ok: false,
-      refusal: {
-        code: 'agent_session_operation_unknown',
-        message: 'The chat may have been created, but its tab could not be confirmed.'
+  if (prepared.tab) {
+    const published = await publishCreatedSessionTab(
+      args.runtime,
+      prepared.tab,
+      result,
+      args.activate
+    )
+    if (!published) {
+      return {
+        ok: false,
+        refusal: {
+          code: 'agent_session_operation_unknown',
+          message: 'The chat may have been created, but its tab could not be confirmed.'
+        }
       }
     }
   }
+  if (args.seed && shouldSeedCreatedSession(prepared, result)) {
+    // Awaited so the seed's journal row lands before the client can send its own first message.
+    await commitStructuredAgentSessionLaunchPrompt({
+      host: prepared.host,
+      caller: args.caller,
+      sessionId: result.value.sessionId,
+      fence: result.fence,
+      text: STRUCTURED_AGENT_SESSION_CREATE_SEED_TEXT
+    })
+  }
   return result
+}
+
+function shouldSeedCreatedSession(
+  prepared: PreparedStructuredAgentSessionCreate,
+  result: Extract<AgentSessionMutationResult<AgentSessionAttachResult>, { ok: true }>
+): boolean {
+  // A replayed create already seeded on its first run; an adopted or non-empty session already
+  // has turns of its own.
+  return (
+    !result.replayed && !prepared.attachParams.adopt && result.value.page.submissions.length === 0
+  )
+}
+
+async function publishCreatedSessionTab(
+  runtime: OrcaRuntimeService,
+  tab: NonNullable<PreparedStructuredAgentSessionCreate['tab']>,
+  result: Extract<AgentSessionMutationResult<AgentSessionAttachResult>, { ok: true }>,
+  activate: boolean
+): Promise<boolean> {
+  try {
+    await runtime.publishStructuredAgentSessionTab({
+      workspaceId: tab.workspaceId,
+      sessionId: result.value.sessionId,
+      agent: tab.agent,
+      activate
+    })
+    return true
+  } catch (error) {
+    console.warn('[agent-session] create committed before tab publication failed', error)
+    return false
+  }
 }
 
 export async function createStructuredAgentSessionForWorktree(args: {
