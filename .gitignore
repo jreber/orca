@@ -82,6 +82,9 @@ prod-release-scan-*.md
 # Temp
 tmp/
 .tmp/
+
+# Agent-local git worktrees
+.worktrees/
 design-docs/
 .context/
 .atl/
