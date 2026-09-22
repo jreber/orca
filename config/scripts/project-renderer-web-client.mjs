@@ -17,7 +17,8 @@ const webOutput = resolve('out/web')
 const stagingOutput = resolve(dirname(webOutput), `.web-projection-${process.pid}`)
 const manifestPath = join(rendererOutput, '.vite', 'manifest.json')
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
-const selectedFiles = new Set(['web-index.html'])
+const WEB_ENTRY_PAGES = ['web-index.html', 'single-session-index.html']
+const selectedFiles = new Set(WEB_ENTRY_PAGES)
 const visitedEntries = new Set()
 const PDFJS_VIEWER_ASSET_DIRS = ['cmaps', 'standard_fonts', 'wasm']
 
@@ -151,7 +152,9 @@ async function minifyWebOutput() {
 }
 
 assertEntryIsolation()
-visitManifestEntry('web-index.html')
+for (const page of WEB_ENTRY_PAGES) {
+  visitManifestEntry(page)
+}
 includeReferencedOutputs()
 includePdfjsViewerAssets()
 
