@@ -92,13 +92,35 @@ describe('agentSession.create seed turn', () => {
     expect(hostCalls.send).toHaveBeenCalledOnce()
   })
 
-  it('does not seed a replayed create, so a retry never adds a second turn', async () => {
-    hostCalls.attach.mockResolvedValueOnce(await attachResultWith({ replayed: true }))
+  it('does not seed a replayed create whose session already has a submission, so a retry never adds a second turn', async () => {
+    const base = (await attachResultWith({})) as unknown as {
+      value: { page: Record<string, unknown> }
+    }
+    hostCalls.attach.mockResolvedValueOnce(
+      await attachResultWith({
+        replayed: true,
+        value: {
+          ...base.value,
+          page: { ...base.value.page, submissions: [{ clientMessageId: 'seed' }] }
+        }
+      })
+    )
 
     const created = await call('agentSession.create', worktreeCreateParams(), STRUCTURED_CLIENT)
 
     expect(created).toMatchObject({ ok: true, result: { ok: true } })
     expect(hostCalls.send).not.toHaveBeenCalled()
+  })
+
+  it('seeds a replayed create whose first run never reached the seed', async () => {
+    // The first run can refuse after attach committed (its tab could not be confirmed) and before
+    // the seed was sent; the client's retry replays, and must still give the chat its seed.
+    hostCalls.attach.mockResolvedValueOnce(await attachResultWith({ replayed: true }))
+
+    const created = await call('agentSession.create', worktreeCreateParams(), STRUCTURED_CLIENT)
+
+    expect(created).toMatchObject({ ok: true, result: { ok: true } })
+    expect(hostCalls.send).toHaveBeenCalledOnce()
   })
 
   it('does not seed a create that adopts an existing provider conversation', async () => {

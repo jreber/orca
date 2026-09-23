@@ -145,11 +145,11 @@ function shouldSeedCreatedSession(
   prepared: PreparedStructuredAgentSessionCreate,
   result: Extract<AgentSessionMutationResult<AgentSessionAttachResult>, { ok: true }>
 ): boolean {
-  // A replayed create already seeded on its first run; an adopted or non-empty session already
-  // has turns of its own.
-  return (
-    !result.replayed && !prepared.attachParams.adopt && result.value.page.submissions.length === 0
-  )
+  // An adopted or non-empty session already has turns of its own. `replayed` is deliberately not
+  // a veto: a first run can refuse after attach committed (tab not confirmed) but before its seed,
+  // so the retry replays with no submissions. A replay whose first run did seed carries that
+  // submission in its page and is skipped by the emptiness check.
+  return !prepared.attachParams.adopt && result.value.page.submissions.length === 0
 }
 
 async function publishCreatedSessionTab(
