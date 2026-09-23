@@ -79,9 +79,44 @@ describe('resolveClaudeCommandOverride', () => {
     expect(resolveClaudeCommandOverride('/x/~/y', { homePath: '/home/t' })).toEqual(
       honored('/x/~/y')
     )
-    expect(resolveClaudeCommandOverride('~other/bin/c', { homePath: '/home/t' })).toEqual(
-      honored('~other/bin/c')
-    )
+    // `~other/…` is not expanded, which leaves a relative path: ambiguous, so not honored.
+    expect(resolveClaudeCommandOverride('~other/bin/c', { homePath: '/home/t' })).toMatchObject({
+      kind: 'ignored'
+    })
+  })
+
+  it.each([
+    ['./bin/claude', 'linux'],
+    ['bin/claude', 'darwin'],
+    ['../claude', 'linux'],
+    ['.\\bin\\claude.cmd', 'win32'],
+    ['bin\\claude.exe', 'win32']
+  ] as const)('ignores the relative path %s as ambiguous', (override, platform) => {
+    expect(resolveClaudeCommandOverride(override, { platform })).toEqual({
+      kind: 'ignored',
+      reason: 'a relative path is ambiguous; use an absolute path or one starting with ~/'
+    })
+  })
+
+  it.each([
+    ['C:\\Program Files\\Claude\\claude.exe', 'win32'],
+    ['/Applications/My Tools/claude', 'darwin']
+  ] as const)('says to quote the unquoted path with spaces %s', (override, platform) => {
+    expect(resolveClaudeCommandOverride(override, { platform })).toEqual({
+      kind: 'ignored',
+      reason: 'it looks like a path with spaces; quote paths that contain spaces'
+    })
+  })
+
+  it.each([
+    ['/o/claude --model opus', 'linux'],
+    ['/usr/bin/env /opt/claude', 'linux'],
+    ['C:\\tools\\claude.cmd --settings C:\\x.json', 'win32']
+  ] as const)('keeps the arguments reason for %s', (override, platform) => {
+    expect(resolveClaudeCommandOverride(override, { platform })).toEqual({
+      kind: 'ignored',
+      reason: 'it is not a single executable (it has arguments)'
+    })
   })
 
   it('resolves a bare command name through PATH to its absolute path', () => {
@@ -156,6 +191,51 @@ describe('resolveStructuredClaudeCommand', () => {
     expect(resolveStructuredClaudeCommand(override, () => 'fallback')).toBe('fallback')
     expect(warn).toHaveBeenCalledOnce()
     expect(String(warn.mock.calls[0]?.[0])).toContain(JSON.stringify(override))
+  })
+
+  it('resolves an extension-less Windows path to the .cmd that exists', () => {
+    const dir = makeTempDir()
+    const cmd = join(dir, 'claude.cmd')
+    writeFileSync(cmd, '@echo off\r\n')
+    expect(
+      resolveStructuredClaudeCommand(join(dir, 'claude'), () => 'fallback', { platform: 'win32' })
+    ).toBe(cmd)
+  })
+
+  it('prefers .exe over .cmd for an extension-less Windows path, as PATHEXT does', () => {
+    const dir = makeTempDir()
+    writeFileSync(join(dir, 'claude.cmd'), '')
+    writeFileSync(join(dir, 'claude.exe'), '')
+    expect(
+      resolveStructuredClaudeCommand(join(dir, 'claude'), () => 'fallback', { platform: 'win32' })
+    ).toBe(join(dir, 'claude.exe'))
+  })
+
+  it('fails before spawn, naming the override, for an extension-less Windows path with no match', () => {
+    const dir = makeTempDir()
+    // An extension-less file cannot be spawned on Windows, so it is not a match either.
+    writeFileSync(join(dir, 'claude'), '')
+    const override = join(dir, 'claude')
+    expect(() =>
+      resolveStructuredClaudeCommand(override, () => 'fallback', { platform: 'win32' })
+    ).toThrow(`Claude command override ${JSON.stringify(override)} was not found at ${override}`)
+  })
+
+  it('falls back for a relative path and warns with the reason', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(
+      resolveStructuredClaudeCommand('./bin/claude', () => 'fallback', { platform: 'linux' })
+    ).toBe('fallback')
+    expect(warn).toHaveBeenCalledOnce()
+    expect(String(warn.mock.calls[0]?.[0])).toContain('"./bin/claude"')
+    expect(String(warn.mock.calls[0]?.[0])).toContain('a relative path is ambiguous')
+  })
+
+  it('fails before spawn when the override names a directory', () => {
+    const dir = makeTempDir()
+    expect(() => resolveStructuredClaudeCommand(dir, () => 'fallback')).toThrow(
+      `Claude command override ${JSON.stringify(dir)} was not found at ${dir}`
+    )
   })
 
   it('fails before spawn, naming the override, when its path does not exist', () => {
