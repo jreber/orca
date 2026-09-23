@@ -1,2 +1,2 @@
 #!/bin/sh
-exec node "$(dirname "$0")/claude-stub.cjs" "$@"
+CLAUDE_STUB_ENTRY="$0" exec node "$(dirname "$0")/claude-stub.cjs" "$@"

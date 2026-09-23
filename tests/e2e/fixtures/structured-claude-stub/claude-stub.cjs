@@ -5,6 +5,13 @@ const { randomUUID } = require('node:crypto')
 const { createInterface } = require('node:readline')
 
 const argv = process.argv.slice(2)
+// Opt-in invocation record so a spec can prove WHICH executable Orca launched (the wrapper that
+// exec'd this file names itself in CLAUDE_STUB_ENTRY) and in which working directory.
+if (process.env.CLAUDE_STUB_LOG) {
+  const entry = process.env.CLAUDE_STUB_ENTRY ?? __filename
+  const record = { entry, cwd: process.cwd(), argv }
+  require('node:fs').appendFileSync(process.env.CLAUDE_STUB_LOG, `${JSON.stringify(record)}\n`)
+}
 if (argv.includes('--version') || argv.includes('-v')) {
   process.stdout.write('2.1.280 (Claude Code)\n')
   process.exit(0)

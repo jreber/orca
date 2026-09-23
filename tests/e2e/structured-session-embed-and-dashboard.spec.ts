@@ -1,26 +1,20 @@
 import { randomUUID } from 'node:crypto'
-import path from 'node:path'
 import type { ElectronApplication, Page } from '@stablyai/playwright-test'
 import { expect, test } from './helpers/orca-app'
 import { createRuntimeDesktopPairingOffer } from './helpers/paired-electron-client'
 import { waitForActiveWorktree, waitForSessionReady } from './helpers/store'
 import {
+  enableStructuredChatDashboard,
+  openDashboardWithSeededClaudeCard,
+  STRUCTURED_SESSION_SEED_TEXT as SEED_TEXT,
+  structuredClaudeStubLaunchEnv
+} from './helpers/structured-claude-stub'
+import {
   createStructuredAgentSessionId,
   structuredAgentSessionCreateParams
 } from '../../src/shared/structured-agent-session-create'
 
-// The seed turn `agentSession.create` sends; it becomes the session's latest prompt.
-const SEED_TEXT = /just been started in this workspace/
-
 const SCREENSHOT_DIR = process.env.ORCA_E2E_SCREENSHOT_DIR
-
-// A stream-json Claude stand-in first on PATH: the e2e HOME has no Claude sign-in, and the create
-// path under test (attach, tab publish, seed turn, status projection) is Orca's, not the CLI's.
-function structuredClaudeStubLaunchEnv(): NodeJS.ProcessEnv {
-  const stubDir = path.join(process.cwd(), 'tests', 'e2e', 'fixtures', 'structured-claude-stub')
-  const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === 'path') ?? 'PATH'
-  return { [pathKey]: [stubDir, process.env[pathKey] ?? ''].filter(Boolean).join(path.delimiter) }
-}
 
 async function openHiddenWindow(app: ElectronApplication, url: string): Promise<Page> {
   const pagePromise = app.waitForEvent('window')
@@ -75,16 +69,7 @@ test.describe('with a stub Claude CLI', () => {
   }) => {
     await waitForSessionReady(orcaPage)
     const worktreeId = await waitForActiveWorktree(orcaPage)
-    await orcaPage.evaluate(async () => {
-      const settings = await window.api.settings.set({
-        experimentalNativeChat: true,
-        experimentalStructuredNativeChat: true,
-        experimentalAgentDashboardPopout: true,
-        experimentalAgentDashboardMode: 'in-window',
-        experimentalAgentDashboardShowIdle: true
-      })
-      window.__store?.setState({ settings })
-    })
+    await enableStructuredChatDashboard(orcaPage)
 
     const sessionId = createStructuredAgentSessionId('claude', randomUUID)
     const params = structuredAgentSessionCreateParams({
@@ -103,11 +88,7 @@ test.describe('with a stub Claude CLI', () => {
       result: { ok: true, value: { sessionId } }
     })
 
-    await orcaPage.getByRole('button', { name: /Agent Dashboard/ }).click()
-    const dashboard = orcaPage.locator('[data-agent-dashboard-sheet]')
-    await dashboard.waitFor({ state: 'visible' })
-    await expect(dashboard.getByText(SEED_TEXT).first()).toBeVisible({ timeout: 30_000 })
-    await expect(dashboard.getByText('Claude Chat').first()).toBeVisible()
+    const dashboard = await openDashboardWithSeededClaudeCard(orcaPage)
     if (SCREENSHOT_DIR) {
       // The sheet is an overlay a page-level capture of the hidden window can miss.
       await dashboard.screenshot({ path: `${SCREENSHOT_DIR}/e2e-dashboard-card.png` })
