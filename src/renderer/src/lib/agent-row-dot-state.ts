@@ -1,5 +1,9 @@
 import type { AgentDotState } from '@/components/AgentStateDot'
-import type { AgentWorkingMode } from '../../../shared/agent-status-types'
+import type { AgentStatusEntry } from '../../../shared/agent-status-types'
+import {
+  isReadySessionBoundary,
+  type AgentCompletionSource
+} from '../../../shared/agent-completion-time'
 import type { AgentRowState } from './agent-row-decay-state'
 
 /**
@@ -8,14 +12,16 @@ import type { AgentRowState } from './agent-row-decay-state'
  */
 export function agentRowDotState(
   state: AgentRowState,
-  workingMode?: AgentWorkingMode
+  entry?: Pick<AgentStatusEntry, 'workingMode'> & AgentCompletionSource
 ): AgentDotState {
   switch (state) {
     case 'working':
-      return workingMode === 'monitoring' ? 'monitoring' : 'working'
+      return entry?.workingMode === 'monitoring' ? 'monitoring' : 'working'
+    case 'done':
+      // Why: a ready session boundary is a connected agent, not a finished turn — no done dot.
+      return entry && isReadySessionBoundary(entry) ? 'idle' : 'done'
     case 'blocked':
     case 'waiting':
-    case 'done':
     case 'idle':
     case 'unverifiable':
       return state

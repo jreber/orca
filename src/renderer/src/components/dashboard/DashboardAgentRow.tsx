@@ -130,7 +130,7 @@ const DashboardAgentRow = React.memo(function DashboardAgentRow({
   const conversationName = useAgentRowConversationName(agent)
   const prompt = conversationName ?? getAgentRowPrimaryText(agent.entry)
   // Why: prompt is '' when unknown, so fall back to the state label to keep the row labeled.
-  const displayLabel = prompt || agentStateLabel(asDotState(agent.state, agent.entry.workingMode))
+  const displayLabel = prompt || agentStateLabel(asDotState(agent.state, agent.entry))
   const model = agent.entry.model?.trim() ?? ''
   const isMonitoring = agent.state === 'working' && agent.entry.workingMode === 'monitoring'
   const isWorking = agent.state === 'working' && !isMonitoring
@@ -155,7 +155,7 @@ const DashboardAgentRow = React.memo(function DashboardAgentRow({
   // Why: interrupted is a terminal outcome, so surface it in the leading state dot.
   const dotState: AgentDotState = isInterrupted
     ? 'interrupted'
-    : asDotState(agent.state, agent.entry.workingMode)
+    : asDotState(agent.state, agent.entry)
   const dotTooltipLabel = stateDotTooltipLabel(agent, dotState, now)
   // Why: the elapsed gap is the whole content of an `unverifiable` row, so it rides the
   // row's own timestamp slot rather than hiding in a hover tooltip.

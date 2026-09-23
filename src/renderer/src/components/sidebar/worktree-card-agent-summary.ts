@@ -24,7 +24,7 @@ export function getAgentDotState(agent: DashboardAgentRowData): AgentDotState {
   if (agent.entry.interrupted === true) {
     return 'interrupted'
   }
-  return agentRowDotState(agent.state, agent.entry.workingMode)
+  return agentRowDotState(agent.state, agent.entry)
 }
 
 export function formatSummaryStateLabel(state: AgentDotState): string {
