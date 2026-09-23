@@ -6,6 +6,7 @@ import {
 } from '../../../../shared/dashboard-snapshot'
 import { dashboardBucketForDotState } from './dashboard-card-bucket'
 import type { AgentRowState } from '@/lib/agent-row-decay-state'
+import { agentEntryCompletionAt } from '../../../../shared/agent-completion-time'
 
 /**
  * Project a row state onto the published card vocabulary.
@@ -38,8 +39,16 @@ export function dashboardRowBucketProjection(
     row.state === 'working' && row.entry.workingMode === 'monitoring'
       ? row.entry.workingMode
       : undefined
+  // A session-boundary `done` is a ready agent, not a finished turn, so there is nothing to read
+  // unless it displaced a real completion (the sidebar's rule too).
+  const readyBoundary =
+    row.entry.state === 'done' &&
+    row.entry.sessionBoundary === true &&
+    agentEntryCompletionAt(row.entry) === null
   const unseen =
-    !isTitleDerived && (acknowledgedAgentsByPaneKey?.[row.paneKey] ?? 0) < row.entry.stateStartedAt
+    !isTitleDerived &&
+    !readyBoundary &&
+    (acknowledgedAgentsByPaneKey?.[row.paneKey] ?? 0) < row.entry.stateStartedAt
   const bucket = dashboardBucketForDotState(
     dashboardCardDisplayState({ dotState, workingMode, unseen })
   )
