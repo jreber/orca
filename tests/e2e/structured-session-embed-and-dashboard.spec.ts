@@ -5,8 +5,9 @@ import { createRuntimeDesktopPairingOffer } from './helpers/paired-electron-clie
 import { waitForActiveWorktree, waitForSessionReady } from './helpers/store'
 import {
   enableStructuredChatDashboard,
-  openDashboardWithSeededClaudeCard,
-  STRUCTURED_SESSION_SEED_TEXT as SEED_TEXT,
+  expectReadyStructuredSession,
+  openDashboardWithClaudeCard,
+  readStructuredSessionStatusRow,
   structuredClaudeStubLaunchEnv
 } from './helpers/structured-claude-stub'
 import {
@@ -88,7 +89,9 @@ test.describe('with a stub Claude CLI', () => {
       result: { ok: true, value: { sessionId } }
     })
 
-    const dashboard = await openDashboardWithSeededClaudeCard(orcaPage)
+    // Before anyone writes to it: listed as ready, with no model turn behind it.
+    const dashboard = await openDashboardWithClaudeCard(orcaPage)
+    await expectReadyStructuredSession(orcaPage, sessionId)
     if (SCREENSHOT_DIR) {
       // The sheet is an overlay a page-level capture of the hidden window can miss.
       await dashboard.screenshot({ path: `${SCREENSHOT_DIR}/e2e-dashboard-card.png` })
@@ -103,7 +106,22 @@ test.describe('with a stub Claude CLI', () => {
       agent: 'claude'
     }).toString()
     const embed = await openHiddenWindow(electronApp, embedUrl.toString())
-    await expect(embed.getByText(SEED_TEXT).first()).toBeVisible({ timeout: 30_000 })
+    const composer = embed.getByRole('textbox', { name: 'Send a message…' })
+    await expect(composer).toBeEditable({ timeout: 30_000 })
+    // The chat is still untouched: no turn was sent on the user's behalf.
+    expect(await readStructuredSessionStatusRow(orcaPage, sessionId)).toEqual({
+      state: 'done',
+      sessionBoundary: true,
+      prompt: ''
+    })
+
+    // The user's first message is the session's first turn.
+    await composer.fill('hello from the embed')
+    await composer.press('Enter')
+    await expect(embed.getByText('Ready when you are.').first()).toBeVisible({ timeout: 30_000 })
+    await expect
+      .poll(() => readStructuredSessionStatusRow(orcaPage, sessionId), { timeout: 30_000 })
+      .toEqual({ state: 'done', sessionBoundary: false, prompt: 'hello from the embed' })
     if (SCREENSHOT_DIR) {
       await embed.screenshot({ path: `${SCREENSHOT_DIR}/e2e-single-session.png` })
     }

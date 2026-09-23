@@ -10,8 +10,9 @@ import { expect, test } from './helpers/orca-app'
 import { waitForSessionReady } from './helpers/store'
 import {
   enableStructuredChatDashboard,
+  expectReadyStructuredSession,
   isClaudeSessionLaunch,
-  openDashboardWithSeededClaudeCard,
+  openDashboardWithClaudeCard,
   readClaudeStubInvocations,
   STRUCTURED_CLAUDE_STUB_DIR,
   structuredClaudeStubLaunchEnv
@@ -31,8 +32,23 @@ async function runtimeCall<T>(page: Page, method: string, params?: unknown): Pro
   return response.result as T
 }
 
+type Workspace = { id: string; path: string } & Record<string, unknown>
+
+/** The folder's workspace as `worktree.list` reports it (name, branch and all). */
+async function readFolderWorkspace(page: Page, repoId: string, folder: string): Promise<Workspace> {
+  const { worktrees } = await runtimeCall<{ worktrees: Workspace[] }>(page, 'worktree.list', {
+    repo: `id:${repoId}`
+  })
+  const workspaces = worktrees.filter((worktree) => worktree.path === folder)
+  expect(workspaces, JSON.stringify(worktrees)).toHaveLength(1)
+  return workspaces[0]
+}
+
 /** repo.add (twice: idempotent) → repo.list → worktree.list, as the plugin resolves its vault. */
-async function addFolderProject(page: Page, folder: string): Promise<string> {
+async function addFolderProject(
+  page: Page,
+  folder: string
+): Promise<{ repoId: string; workspace: Workspace }> {
   type Repo = { id: string; path: string; kind: string }
   const params = { path: folder, kind: 'folder', displayName: 'Vault' }
   const { repo } = await runtimeCall<{ repo: Repo }>(page, 'repo.add', params)
@@ -42,14 +58,7 @@ async function addFolderProject(page: Page, folder: string): Promise<string> {
   const { repos } = await runtimeCall<{ repos: Repo[] }>(page, 'repo.list')
   expect(repos.filter((entry) => entry.path === folder).map((entry) => entry.id)).toEqual([repo.id])
 
-  const { worktrees } = await runtimeCall<{ worktrees: { id: string; path: string }[] }>(
-    page,
-    'worktree.list',
-    { repo: `id:${repo.id}` }
-  )
-  const workspaces = worktrees.filter((worktree) => worktree.path === folder)
-  expect(workspaces, JSON.stringify(worktrees)).toHaveLength(1)
-  return workspaces[0].id
+  return { repoId: repo.id, workspace: await readFolderWorkspace(page, repo.id, folder) }
 }
 
 /** `agentSession.create` with the plugin's session id (a bare UUID) and envelope. */
@@ -101,10 +110,18 @@ test.describe('structured Claude chat in a non-git folder project', () => {
     try {
       await waitForSessionReady(orcaPage)
       await enableStructuredChatDashboard(orcaPage)
-      const workspaceId = await addFolderProject(orcaPage, folder)
-      const sessionId = await createClaudeSessionLikeThePlugin(orcaPage, workspaceId)
+      const { repoId, workspace } = await addFolderProject(orcaPage, folder)
+      const sessionId = await createClaudeSessionLikeThePlugin(orcaPage, workspace.id)
 
-      const dashboard = await openDashboardWithSeededClaudeCard(orcaPage)
+      // Listed before anyone writes to it, with no turn sent on the user's behalf.
+      const dashboard = await openDashboardWithClaudeCard(orcaPage)
+      await expectReadyStructuredSession(orcaPage, sessionId)
+      // Nothing was prompted, so the first-work rename had nothing to name the workspace from.
+      const after = await readFolderWorkspace(orcaPage, repoId, folder)
+      expect({ displayName: after.displayName, branch: after.branch }).toEqual({
+        displayName: workspace.displayName,
+        branch: workspace.branch
+      })
       // The card names the folder project it runs in.
       await expect(dashboard.getByText('Vault', { exact: true }).first()).toBeVisible()
       if (SCREENSHOT_DIR) {
@@ -135,7 +152,8 @@ test.describe('structured Claude chat in a non-git folder project', () => {
     }
   })
 
-  // `with-arguments`: the setting is a terminal command line; structured chat runs its first word.
+  // `with-arguments`: structured chat spawns without a shell, so it cannot run a command line
+  // faithfully; it falls back to the default claude rather than run part of one.
   for (const form of ['absolute', 'home-relative', 'with-arguments'] as const) {
     test(`a chat session launches the agentCmdOverrides.claude binary (${form})`, async ({
       electronApp,
@@ -172,23 +190,25 @@ test.describe('structured Claude chat in a non-git folder project', () => {
           const settings = await window.api.settings.set({ agentCmdOverrides: { claude } })
           window.__store?.setState({ settings })
         }, override)
-        const workspaceId = await addFolderProject(orcaPage, folder)
-        await createClaudeSessionLikeThePlugin(orcaPage, workspaceId)
-        await openDashboardWithSeededClaudeCard(orcaPage)
+        const { workspace } = await addFolderProject(orcaPage, folder)
+        const sessionId = await createClaudeSessionLikeThePlugin(orcaPage, workspace.id)
+        await openDashboardWithClaudeCard(orcaPage)
+        await expectReadyStructuredSession(orcaPage, sessionId)
 
-        const launches = readClaudeStubInvocations(testInfo.outputPath('claude-stub.log')).filter(
-          isClaudeSessionLaunch
-        )
-        const entries = launches.map((launch) => launch.entry)
-        expect(entries.length, 'a Claude session process was launched').toBeGreaterThan(0)
-        expect(entries).toContain(overridePath)
-        expect(entries).not.toContain(DEFAULT_STUB_PATH)
+        const launches = () =>
+          readClaudeStubInvocations(testInfo.outputPath('claude-stub.log')).filter(
+            isClaudeSessionLaunch
+          )
+        await expect
+          .poll(() => launches().length, { message: 'a Claude session process was launched' })
+          .toBeGreaterThan(0)
+        const entries = launches().map((launch) => launch.entry)
         if (form === 'with-arguments') {
-          // Only the first word is the binary; the override's own arguments are a terminal
-          // command line and must not reach the structured launch.
-          const argv = launches.flatMap((launch) => launch.argv)
-          expect(argv).not.toContain('opus')
-          expect(argv).not.toContain('--model')
+          expect(entries).toContain(DEFAULT_STUB_PATH)
+          expect(entries).not.toContain(overridePath)
+        } else {
+          expect(entries).toContain(overridePath)
+          expect(entries).not.toContain(DEFAULT_STUB_PATH)
         }
       } finally {
         rmSync(folder, { recursive: true, force: true })

@@ -41,16 +41,11 @@ export async function commitStructuredAgentSessionLaunchPrompt(args: {
   sessionId: string
   fence: number
   text: string
-  /** A caller that may send the same prompt more than once (the create seed, across replays)
-   *  passes a stable id so the host's send dedupe replays the repeat instead of appending it.
-   *  Everyone else gets a fresh id per call. */
-  clientMessageId?: string
 }): Promise<string | null> {
   if (!args.host || args.text.trim().length === 0) {
     return null
   }
-  const clientMessageId =
-    args.clientMessageId ?? createStructuredAgentSessionOperationId(randomUUID)
+  const clientMessageId = createStructuredAgentSessionOperationId(randomUUID)
   const entry = createStructuredAgentSessionOutboxEntry({
     clientMessageId,
     sessionId: args.sessionId,

@@ -416,15 +416,29 @@ describe('StructuredAgentSessionStatusBridge', () => {
     ])
   })
 
-  it('shows no status before a persisted turn', async () => {
+  it('lists a session with no turn yet as a ready session boundary', async () => {
     render(<StructuredAgentSessionStatusBridge />)
     await waitFor(() => expect(mocks.subscribeStatus).toHaveBeenCalledOnce())
 
-    act(() => feed().emit({ type: 'snapshot', sessions: [summary({ status: null })] }))
-    expect(mocks.setAgentStatus).not.toHaveBeenCalled()
+    act(() =>
+      feed().emit({ type: 'snapshot', sessions: [summary({ status: null, latestPrompt: '' })] })
+    )
+    expect(statuses()).toEqual([
+      expect.objectContaining({ state: 'done', sessionBoundary: true, prompt: '' })
+    ])
 
     act(() => feed().emit({ type: 'status', session: summary({ updatedAt: 2 }) }))
-    expect(statuses()).toEqual([expect.objectContaining({ state: 'working' })])
+    expect(statuses()).toEqual([
+      expect.objectContaining({ state: 'working', sessionBoundary: false })
+    ])
+  })
+
+  it('shows no status for a session the feed does not know', async () => {
+    render(<StructuredAgentSessionStatusBridge />)
+    await waitFor(() => expect(mocks.subscribeStatus).toHaveBeenCalledOnce())
+
+    act(() => feed().emit({ type: 'snapshot', sessions: [] }))
+    expect(mocks.setAgentStatus).not.toHaveBeenCalled()
   })
 
   it('keeps the status map reference stable for repeated equal summaries', async () => {
