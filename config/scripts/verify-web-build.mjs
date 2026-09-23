@@ -7,7 +7,11 @@ const WEB_ENTRY_PAGES = ['web-index.html', 'single-session-index.html']
 
 for (const page of WEB_ENTRY_PAGES) {
   const indexPath = resolve('out/web', page)
-  const html = await readFile(indexPath, 'utf8')
+  const html = await readFile(indexPath, 'utf8').catch(() => null)
+  if (html === null) {
+    console.error(`Web build is missing ${indexPath}`)
+    process.exit(1)
+  }
 
   const absoluteAssetReference = /\b(?:src|href)=["']\/assets\//.exec(html)
 

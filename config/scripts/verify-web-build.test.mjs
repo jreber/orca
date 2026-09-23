@@ -65,6 +65,9 @@ describe('verify-web-build', () => {
   it('fails when the single-session page is missing from the build', () => {
     const root = createWebBuildFixture({ 'web-index.html': RELATIVE_PAGE })
 
-    expect(runVerify(root).status).not.toBe(0)
+    const result = runVerify(root)
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('missing')
+    expect(result.stderr).toContain('single-session-index.html')
   })
 })
