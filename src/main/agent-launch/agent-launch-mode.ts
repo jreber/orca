@@ -141,8 +141,7 @@ export function decideAgentLaunchMode(args: {
     // the create-support probe reads the resolved workspace rather than guessing from a
     // client-side project runtime.
     ...(placement.workspaceKind ? { workspaceKind: placement.workspaceKind } : {}),
-    // An override is a full terminal command line, so an in-app launch keeps it in a terminal by
-    // design; only a direct structured create runs the override's executable (without arguments).
+    // An override is a terminal command line, so an in-app launch keeps it in a terminal.
     requiresTuiLaunchCommand: hasExplicitTuiLaunchCommand(settings, agent)
   })
   if (!support.supported) {

@@ -8,6 +8,14 @@ export function extractExecutableToken(
   command: string | null | undefined,
   options: ExtractExecutableTokenOptions = {}
 ): string | null {
+  return splitExecutableToken(command, options)?.token ?? null
+}
+
+/** The first word of a command line, unquoted, plus whatever follows it (trimmed). */
+export function splitExecutableToken(
+  command: string | null | undefined,
+  options: ExtractExecutableTokenOptions = {}
+): { token: string; rest: string } | null {
   const input = command?.trim()
   if (!input) {
     return null
@@ -39,7 +47,7 @@ export function extractExecutableToken(
     }
     index += 1
   }
-  return token.length > 0 ? token : null
+  return token.length > 0 ? { token, rest: input.slice(index).trim() } : null
 }
 
 export function hasPathSeparatorToken(token: string): boolean {

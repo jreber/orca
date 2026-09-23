@@ -154,8 +154,8 @@ export class OrcaRuntimeWithGetWorktreePs extends OrcaRuntimeWithStructuredAgent
         resolveTuiAgentLaunchEnv('codex', this.requireStore().getSettings().agentDefaultEnv),
       resolveClaudeLaunchEnv: () =>
         resolveTuiAgentLaunchEnv('claude', this.requireStore().getSettings().agentDefaultEnv),
-      // Chat sessions used a bare PATH lookup and ignored the per-agent command override that
-      // terminal launches honor; re-read per launch like the neighbouring settings.
+      // This host's Claude command override, when it is a single executable; re-read per launch
+      // like the neighbouring settings.
       resolveClaudeCommand: () =>
         resolveStructuredClaudeCommand(
           this.requireStore().getSettings().agentCmdOverrides?.claude,
