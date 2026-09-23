@@ -183,6 +183,13 @@ test.describe('structured Claude chat in a non-git folder project', () => {
         expect(entries.length, 'a Claude session process was launched').toBeGreaterThan(0)
         expect(entries).toContain(overridePath)
         expect(entries).not.toContain(DEFAULT_STUB_PATH)
+        if (form === 'with-arguments') {
+          // Only the first word is the binary; the override's own arguments are a terminal
+          // command line and must not reach the structured launch.
+          const argv = launches.flatMap((launch) => launch.argv)
+          expect(argv).not.toContain('opus')
+          expect(argv).not.toContain('--model')
+        }
       } finally {
         rmSync(folder, { recursive: true, force: true })
       }

@@ -12,6 +12,8 @@
  * in. Both callers run the same two halves, so orchestration gets that guarantee too.
  */
 
+import { createHash } from 'node:crypto'
+import { parseAgentSessionOperationTimestamp } from '../../../../shared/agent-session-host-authority'
 import { computeAgentSessionPayloadFingerprint } from '../../../../shared/agent-session-mutation-envelope'
 import type {
   AgentSessionAttachResult,
@@ -94,6 +96,31 @@ export const STRUCTURED_AGENT_SESSION_CREATE_SEED_TEXT =
   "You've just been started in this workspace. Wait for the user's first message before doing " +
   "anything — don't take any action yet, just acknowledge you're ready."
 
+/**
+ * The seed's client message id, stable for one session so two replays of its create that both
+ * see an empty session send the SAME operation: the host dedupes `send` by operation id (globally,
+ * under a payload fingerprint the constant seed body keeps identical) and replays the second
+ * instead of appending another turn.
+ *
+ * The timestamp half is the create operation's, not a constant: the host refuses a new operation id
+ * stamped more than a day in the past (or ahead of its clock), and every replay of one create
+ * carries the same create id. The entropy half is keyed only by the session.
+ */
+export function structuredAgentSessionCreateSeedMessageId(
+  sessionId: string,
+  createOperationId: string
+): string | undefined {
+  const timestamp = parseAgentSessionOperationTimestamp(createOperationId)
+  if (timestamp === null) {
+    return undefined
+  }
+  const entropy = createHash('sha256')
+    .update(`orca-create-seed:${sessionId}`)
+    .digest('hex')
+    .slice(0, 32)
+  return `${timestamp.toString().padStart(13, '0')}-${entropy}`
+}
+
 /** The commit half. Past `attach`, a failure no longer proves the session does not exist. */
 export async function commitStructuredAgentSessionCreate(args: {
   runtime: OrcaRuntimeService
@@ -129,13 +156,18 @@ export async function commitStructuredAgentSessionCreate(args: {
     }
   }
   if (args.seed && shouldSeedCreatedSession(prepared, result)) {
+    const clientMessageId = structuredAgentSessionCreateSeedMessageId(
+      result.value.sessionId,
+      prepared.attachParams.envelope.clientOperationId
+    )
     // Awaited so the seed's journal row lands before the client can send its own first message.
     await commitStructuredAgentSessionLaunchPrompt({
       host: prepared.host,
       caller: args.caller,
       sessionId: result.value.sessionId,
       fence: result.fence,
-      text: STRUCTURED_AGENT_SESSION_CREATE_SEED_TEXT
+      text: STRUCTURED_AGENT_SESSION_CREATE_SEED_TEXT,
+      ...(clientMessageId ? { clientMessageId } : {})
     })
   }
   return result
@@ -149,7 +181,17 @@ function shouldSeedCreatedSession(
   // a veto: a first run can refuse after attach committed (tab not confirmed) but before its seed,
   // so the retry replays with no submissions. A replay whose first run did seed carries that
   // submission in its page and is skipped by the emptiness check.
-  return !prepared.attachParams.adopt && result.value.page.submissions.length === 0
+  //
+  // Emptiness is judged on the whole page, not just `submissions`: the page is the newest slice cut
+  // by size, and `submissions` only covers items on it, so a long session's tail can hold only
+  // agent items with no submission beside them.
+  const { page } = result.value
+  return (
+    !prepared.attachParams.adopt &&
+    page.items.length === 0 &&
+    !page.hasOlder &&
+    page.submissions.length === 0
+  )
 }
 
 async function publishCreatedSessionTab(

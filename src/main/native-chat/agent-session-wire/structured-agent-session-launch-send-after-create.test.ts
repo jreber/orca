@@ -10,6 +10,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { StructuredAgentSessionHost } from './structured-agent-session-host'
 import { commitStructuredAgentSessionLaunchPrompt } from '../../runtime/rpc/methods/agent-launch-structured-prompt'
 import {
+  STRUCTURED_AGENT_SESSION_CREATE_SEED_TEXT,
+  structuredAgentSessionCreateSeedMessageId
+} from '../../runtime/rpc/methods/structured-agent-session-create'
+import {
   accepted,
   attachParams,
   CALLER,
@@ -92,5 +96,41 @@ describe('a launch prompt sent the instant the create resolves', () => {
       messageId: expect.any(String),
       dispatchState: 'unknown'
     })
+  })
+})
+
+describe('a create seed sent twice under the same message id', () => {
+  it('is appended once: the second send replays the first instead of adding a turn', async () => {
+    modelAdapterLiveness(true)
+    const created = await host.attach(CALLER, attachParams())
+    if (!created.ok) {
+      throw new Error(`expected a create, got ${created.refusal.code}`)
+    }
+    const clientMessageId = structuredAgentSessionCreateSeedMessageId(
+      created.value.sessionId,
+      attachParams().envelope.clientOperationId
+    )
+    const seed = () =>
+      commitStructuredAgentSessionLaunchPrompt({
+        host,
+        caller: CALLER,
+        sessionId: created.value.sessionId,
+        fence: created.value.fence,
+        text: STRUCTURED_AGENT_SESSION_CREATE_SEED_TEXT,
+        clientMessageId
+      })
+
+    // Concurrent, as two replays of the same create would race.
+    const ids = await Promise.all([seed(), seed()])
+    // And once more after both settled.
+    ids.push(await seed())
+
+    expect(ids).toEqual([clientMessageId, clientMessageId, clientMessageId])
+    expect(
+      host
+        .journalSnapshot(created.value.sessionId)
+        .submissions.filter((submission) => submission.clientMessageId === clientMessageId)
+    ).toHaveLength(1)
+    expect(hostTestState().dispatch).toHaveBeenCalledTimes(1)
   })
 })

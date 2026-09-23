@@ -6,7 +6,8 @@ import { computeAgentSessionPayloadFingerprint } from '../../../../shared/agent-
 import type { OrcaRuntimeService } from '../../orca-runtime'
 import {
   createStructuredAgentSessionForWorktree,
-  STRUCTURED_AGENT_SESSION_CREATE_SEED_TEXT
+  STRUCTURED_AGENT_SESSION_CREATE_SEED_TEXT,
+  structuredAgentSessionCreateSeedMessageId
 } from './structured-agent-session-create'
 import {
   attachParams,
@@ -16,6 +17,7 @@ import {
   hostCalls,
   installStructuredHostStub,
   runtimeCalls,
+  OPERATION,
   SESSION,
   STRUCTURED_CLIENT
 } from './structured-agent-session-rpc.test-fixture'
@@ -48,6 +50,27 @@ function worktreeCreateParams() {
 async function attachResultWith(overrides: Record<string, unknown>): Promise<unknown> {
   const stubAttach = hostCalls.attach.getMockImplementation() as () => Promise<object>
   return { ...(await stubAttach()), ...overrides }
+}
+
+async function attachResultWithPage(
+  page: Record<string, unknown>,
+  overrides: Record<string, unknown> = {}
+): Promise<unknown> {
+  const base = (await attachResultWith({})) as unknown as {
+    value: { page: Record<string, unknown> }
+  }
+  return attachResultWith({
+    ...overrides,
+    value: { ...base.value, ...(overrides.value as object), page: { ...base.value.page, ...page } }
+  })
+}
+
+function sentOperationId(call: number): string {
+  const [, mutation] = hostCalls.send.mock.calls[call] as [
+    unknown,
+    { envelope: { clientOperationId: string } }
+  ]
+  return mutation.envelope.clientOperationId
 }
 
 describe('agentSession.create seed turn', () => {
@@ -164,6 +187,55 @@ describe('agentSession.create seed turn', () => {
     expect(hostCalls.send).not.toHaveBeenCalled()
   })
 
+  it('does not seed a replay whose newest page holds only agent items, even with no submissions on it', async () => {
+    // The page is cut by size, so a long session's tail can hold only assistant/tool items whose
+    // submissions sit on an older page; an empty `submissions` alone does not prove no turns.
+    hostCalls.attach.mockResolvedValueOnce(
+      await attachResultWithPage(
+        { items: [{ id: 'assistant-1', kind: 'message', role: 'assistant' }], hasOlder: true },
+        { replayed: true }
+      )
+    )
+
+    await call('agentSession.create', worktreeCreateParams(), STRUCTURED_CLIENT)
+
+    expect(hostCalls.send).not.toHaveBeenCalled()
+  })
+
+  it('does not seed a session whose history has older pages, even when the newest page is empty', async () => {
+    hostCalls.attach.mockResolvedValueOnce(
+      await attachResultWithPage({ hasOlder: true }, { replayed: true })
+    )
+
+    await call('agentSession.create', worktreeCreateParams(), STRUCTURED_CLIENT)
+
+    expect(hostCalls.send).not.toHaveBeenCalled()
+  })
+
+  it('seeds a replayed create under the same message id, so the host replays a second seed instead of appending it', async () => {
+    hostCalls.attach.mockResolvedValueOnce(await attachResultWith({ replayed: true }))
+    hostCalls.attach.mockResolvedValueOnce(await attachResultWith({ replayed: true }))
+
+    await call('agentSession.create', worktreeCreateParams(), STRUCTURED_CLIENT)
+    await call('agentSession.create', worktreeCreateParams(), STRUCTURED_CLIENT)
+
+    expect(hostCalls.send).toHaveBeenCalledTimes(2)
+    expect(sentOperationId(0)).toBe(sentOperationId(1))
+    expect(sentOperationId(0)).toBe(structuredAgentSessionCreateSeedMessageId(SESSION, OPERATION))
+  })
+
+  it('seeds different sessions under different message ids', async () => {
+    hostCalls.attach.mockResolvedValueOnce(
+      await attachResultWithPage({}, { value: { sessionId: 'session-other' } })
+    )
+
+    await call('agentSession.create', worktreeCreateParams(), STRUCTURED_CLIENT)
+    await call('agentSession.create', worktreeCreateParams(), STRUCTURED_CLIENT)
+
+    expect(hostCalls.send).toHaveBeenCalledTimes(2)
+    expect(sentOperationId(0)).not.toBe(sentOperationId(1))
+  })
+
   it('still reports the committed create when the seed send fails', async () => {
     hostCalls.send.mockRejectedValueOnce(new Error('provider unavailable'))
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
@@ -189,5 +261,28 @@ describe('agentSession.create seed turn', () => {
 
     expect(hostCalls.attach).toHaveBeenCalledOnce()
     expect(hostCalls.send).not.toHaveBeenCalled()
+  })
+})
+
+describe('structuredAgentSessionCreateSeedMessageId', () => {
+  it('is a durable operation id stamped with the create operation time', () => {
+    const id = structuredAgentSessionCreateSeedMessageId(SESSION, OPERATION)
+
+    expect(id).toMatch(/^\d{13}-[0-9a-f]{32}$/)
+    // The host refuses a NEW operation id older than a day, so the stamp must be the create's own.
+    expect(id?.slice(0, 13)).toBe(OPERATION.slice(0, 13))
+  })
+
+  it('is deterministic per session and differs across sessions', () => {
+    expect(structuredAgentSessionCreateSeedMessageId(SESSION, OPERATION)).toBe(
+      structuredAgentSessionCreateSeedMessageId(SESSION, OPERATION)
+    )
+    expect(structuredAgentSessionCreateSeedMessageId(SESSION, OPERATION)).not.toBe(
+      structuredAgentSessionCreateSeedMessageId('session-other', OPERATION)
+    )
+  })
+
+  it('is not the create operation id itself', () => {
+    expect(structuredAgentSessionCreateSeedMessageId(SESSION, OPERATION)).not.toBe(OPERATION)
   })
 })
