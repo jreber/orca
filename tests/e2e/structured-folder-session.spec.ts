@@ -112,8 +112,17 @@ test.describe('structured Claude chat in a non-git folder project', () => {
       }
 
       // What the plugin's pane polls to decide the session still exists.
-      const inventory = await runtimeCall<unknown>(orcaPage, 'session.tabs.listAll')
-      expect(JSON.stringify(inventory)).toContain(sessionId)
+      type InventoryTab = { type: string; sessionId?: string; agent?: string }
+      const inventory = await runtimeCall<{ snapshots: { tabs: InventoryTab[] }[] }>(
+        orcaPage,
+        'session.tabs.listAll'
+      )
+      const agentTabs = inventory.snapshots
+        .flatMap((snapshot) => snapshot.tabs)
+        .filter((tab) => tab.type === 'agent-session' && tab.sessionId === sessionId)
+      expect(agentTabs, JSON.stringify(inventory)).toEqual([
+        expect.objectContaining({ sessionId, agent: 'claude' })
+      ])
 
       // The chat runs rooted at the folder (the stub records its working directory).
       const launches = readClaudeStubInvocations(testInfo.outputPath('claude-stub.log')).filter(
@@ -126,7 +135,8 @@ test.describe('structured Claude chat in a non-git folder project', () => {
     }
   })
 
-  for (const form of ['absolute', 'home-relative'] as const) {
+  // `with-arguments`: the setting is a terminal command line; structured chat runs its first word.
+  for (const form of ['absolute', 'home-relative', 'with-arguments'] as const) {
     test(`a chat session launches the agentCmdOverrides.claude binary (${form})`, async ({
       electronApp,
       orcaPage
@@ -151,7 +161,11 @@ test.describe('structured Claude chat in a non-git folder project', () => {
           `#!/bin/sh\nCLAUDE_STUB_ENTRY="$0" exec node ${JSON.stringify(stubScript)} "$@"\n`
         )
         chmodSync(overridePath, 0o755)
-        const override = form === 'absolute' ? overridePath : '~/bin/my-claude'
+        const override = {
+          absolute: overridePath,
+          'home-relative': '~/bin/my-claude',
+          'with-arguments': `${overridePath} --model opus`
+        }[form]
 
         await enableStructuredChatDashboard(orcaPage)
         await orcaPage.evaluate(async (claude) => {
