@@ -206,7 +206,7 @@ describe('buildDashboardSnapshot folder workspaces', () => {
     expect(buildDashboardBucketCounts(mixedState, NOW)).toEqual(expected)
   })
 
-  it('keeps done structured sessions visible when their tab exists only in unified tabs', () => {
+  it('keeps ready structured sessions visible when their tab exists only in unified tabs', () => {
     const structuredState = state()
     structuredState.tabsByWorktree = { [WORKSPACE_ID]: [] }
     structuredState.unifiedTabsByWorktree = {
@@ -242,8 +242,23 @@ describe('buildDashboardSnapshot folder workspaces', () => {
     }
 
     expect(snapshot.cards).toHaveLength(1)
-    expect(snapshot.cards[0]).toMatchObject({ paneKey: PANE_KEY, bucket: 'done' })
+    // A session boundary is a ready session, not a finished turn: nothing unread.
+    expect(snapshot.cards[0]).toMatchObject({ paneKey: PANE_KEY, bucket: 'idle', unseen: false })
     expect(buildDashboardBucketCounts(structuredState, NOW)).toEqual(expected)
+
+    // One that displaced a real completion still has that completion to read.
+    structuredState.agentStatusByPaneKey = {
+      [PANE_KEY]: {
+        ...entry(),
+        state: 'done',
+        sessionBoundary: true,
+        stateHistory: [{ state: 'done', prompt: 'Review the docs', startedAt: NOW - 90_000 }]
+      }
+    }
+    expect(buildDashboardSnapshot(structuredState, NOW).cards[0]).toMatchObject({
+      bucket: 'done',
+      unseen: true
+    })
   })
 
   it('places folder-workspace agents in their real project group without git assumptions', () => {
