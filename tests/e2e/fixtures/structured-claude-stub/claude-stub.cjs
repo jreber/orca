@@ -26,6 +26,8 @@ const flagValue = (flag) => {
   return index === -1 ? undefined : argv[index + 1]
 }
 const sessionId = flagValue('--session-id') ?? flagValue('--resume') ?? randomUUID()
+// What the stub answers every turn with; a spec can set CLAUDE_STUB_REPLY to shape the transcript.
+const reply = process.env.CLAUDE_STUB_REPLY || 'Ready when you are.'
 const emit = (frame) => process.stdout.write(`${JSON.stringify(frame)}\n`)
 const init = () =>
   emit({
@@ -83,7 +85,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       type: 'message',
       role: 'assistant',
       model: 'claude-e2e-stub',
-      content: [{ type: 'text', text: 'Ready when you are.' }],
+      content: [{ type: 'text', text: reply }],
       stop_reason: 'end_turn',
       stop_sequence: null,
       usage: { input_tokens: 1, output_tokens: 1 }
@@ -96,7 +98,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     duration_ms: 1,
     duration_api_ms: 1,
     num_turns: 1,
-    result: 'Ready when you are.',
+    result: reply,
     session_id: sessionId,
     total_cost_usd: 0,
     usage: { input_tokens: 1, output_tokens: 1 },
