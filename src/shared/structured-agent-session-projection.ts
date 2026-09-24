@@ -288,7 +288,8 @@ export type StructuredAgentSessionStatusProjection = {
   lastAssistantMessage?: string
 }
 
-/** One projection shared by host and client: null status means "no turn yet", not idle.
+/** One projection shared by host and client: null status means "no turn yet", not idle
+ *  (session lists show it as ready; see structuredAgentSessionStatusRow).
  *  Every text field is bounded to the same preview an agent-status row carries — a send
  *  admits 256 KB, and one status frame carries every retained session at once. The
  *  assistant line is bounded harder than the hook field it stands in for (a preview, not
@@ -337,6 +338,17 @@ export function structuredAgentSessionStatusState(
   status: StructuredAgentSessionProjectedStatus
 ): 'working' | 'blocked' | 'done' {
   return status === 'working' ? 'working' : status === 'attention' ? 'blocked' : 'done'
+}
+
+/** The row a summary lists as. A session with no turn yet is ready, not finished: a
+ *  session-boundary `done` (as a Claude TUI's SessionStart lands), which notifications,
+ *  unread state and the first-work rename all ignore. */
+export function structuredAgentSessionStatusRow(
+  status: StructuredAgentSessionProjectedStatus | null
+): { state: 'working' | 'blocked' | 'done'; sessionBoundary: boolean } {
+  return status === null
+    ? { state: 'done', sessionBoundary: true }
+    : { state: structuredAgentSessionStatusState(status), sessionBoundary: false }
 }
 
 export function structuredAgentSessionPaneKey(tabId: string, sessionId: string): string {

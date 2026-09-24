@@ -110,9 +110,13 @@ describe('worktree ps reports structured sessions', () => {
     )
   })
 
-  // Null status means no turn has been persisted; the chat itself shows nothing, so neither does this.
-  it('omits a session with no projected status', () => {
-    expect(attach([summary({ status: null })]).agents).toHaveLength(0)
+  // Null status means no turn yet: listed as a ready session, never as activity.
+  it('reports a session with no turn yet as ready, not as activity', () => {
+    const row = attach([summary({ status: null, latestPrompt: '' })])
+    expect(row.agents).toHaveLength(1)
+    expect(row.agents[0]).toMatchObject({ state: 'done', prompt: '' })
+    expect(row.status).toBe('inactive')
+    expect(row.hasHostSidebarActivity).toBe(false)
   })
 
   it('keeps the journal clock on the row, so a restart republish is not new activity', () => {

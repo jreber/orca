@@ -503,6 +503,36 @@ describe('method routing', () => {
     )
   })
 
+  it.each(['claude', 'codex'])(
+    'creates a fresh %s session without sending it a turn',
+    async (agent) => {
+      const worktree = 'id:workspace-1'
+      const params = {
+        envelope: envelope({
+          expectedRuntimeFence: null,
+          payloadFingerprint: computeAgentSessionPayloadFingerprint({
+            method: 'agentSession.create',
+            sessionId: SESSION,
+            fields: { worktree, agent }
+          })
+        }),
+        worktree,
+        agent
+      }
+      const created = await call('agentSession.create', params, STRUCTURED_CLIENT)
+      expect(created).toMatchObject({ ok: true, result: { ok: true } })
+      // The stub's attach returns an empty, non-adopted page: exactly what a create seed would
+      // target. The user's first message is the first turn, so nothing is sent or dispatched.
+      expect(hostCalls.attach).toHaveBeenCalledOnce()
+      expect(hostCalls.send).not.toHaveBeenCalled()
+      expect(hostCalls.waitForSendSettlement).not.toHaveBeenCalled()
+      const calledHostMethods = Object.entries(hostCalls)
+        .filter(([, fn]) => fn.mock.calls.length > 0)
+        .map(([name]) => name)
+      expect(calledHostMethods).toEqual(['attach'])
+    }
+  )
+
   it('reports an unknown create outcome when attach commits before tab publication fails', async () => {
     const worktree = 'id:workspace-1'
     const params = {

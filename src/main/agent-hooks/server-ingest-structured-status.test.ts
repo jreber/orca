@@ -123,15 +123,28 @@ describe('AgentHookServer ingestStructuredStatus', () => {
     })
   })
 
-  // Null status means no turn has been persisted; the chat shows nothing, so neither does this.
-  it('holds no row for a session without a persisted turn, and drops one that regresses to none', () => {
+  // Null status means no turn yet: the session lists as ready, a session-boundary `done` that
+  // completion consumers (notifications, unread, first-work rename) ignore.
+  it('lists a session without a persisted turn as a ready session boundary', () => {
     const server = new AgentHookServer()
-    server.ingestStructuredStatus(summary({ status: null }), SUBJECT)
-    expect(server.getStatusSnapshot()).toEqual([])
+    server.ingestStructuredStatus(
+      summary({ status: null, latestPrompt: '', toolName: undefined, toolInput: undefined }),
+      SUBJECT
+    )
+    expect(server.getStatusSnapshot()).toEqual([
+      expect.objectContaining({
+        paneKey: STRUCTURED_PANE,
+        state: 'done',
+        sessionBoundary: true,
+        prompt: ''
+      })
+    ])
 
-    server.ingestStructuredStatus(summary(), SUBJECT)
-    server.ingestStructuredStatus(summary({ status: null }), SUBJECT)
-    expect(server.getStatusSnapshot()).toEqual([])
+    // The first turn replaces the boundary with a real state and a fresh state clock.
+    server.ingestStructuredStatus(summary({ updatedAt: OBSERVED_AT + 1_000 }), SUBJECT)
+    const working = server.getStatusSnapshot()[0]
+    expect(working).toMatchObject({ state: 'working', stateStartedAt: OBSERVED_AT + 1_000 })
+    expect(working?.sessionBoundary).toBeUndefined()
   })
 
   it('drops the row when the host stops holding the session', () => {

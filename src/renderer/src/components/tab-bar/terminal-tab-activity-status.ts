@@ -8,6 +8,7 @@ import {
   AGENT_STATUS_STALE_AFTER_MS,
   type AgentStatusEntry
 } from '../../../../shared/agent-status-types'
+import { isReadySessionBoundary } from '../../../../shared/agent-completion-time'
 import { parseLegacyNumericPaneKey, parsePaneKey } from '../../../../shared/stable-pane-id'
 import type { TerminalLayoutSnapshot, TerminalTab } from '../../../../shared/terminal-tab-types'
 
@@ -95,7 +96,8 @@ function getTerminalTabActivityFlags(
     } else if (entry.interrupted === true) {
       // Interrupted is encoded as done, so it must be checked first.
       flags.hasInterrupted = true
-    } else if (entry.state === 'done') {
+    } else if (entry.state === 'done' && !isReadySessionBoundary(entry)) {
+      // Why: a ready session boundary is a connected agent, not a finished turn — no done dot.
       flags.hasLiveDone = true
     }
   }

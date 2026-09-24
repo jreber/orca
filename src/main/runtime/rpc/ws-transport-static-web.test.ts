@@ -64,6 +64,22 @@ describe('WebSocketTransport static web client', () => {
     await expect(assetResponse.text()).resolves.toBe('console.log("prefixed")')
   })
 
+  it('serves the single-session embed page directly and behind a proxy prefix', async () => {
+    const staticRoot = mkdtempSync(join(tmpdir(), 'ws-transport-static-'))
+    writeFileSync(join(staticRoot, 'web-index.html'), '<html>web</html>')
+    writeFileSync(join(staticRoot, 'single-session-index.html'), '<html>single</html>')
+    const transport = createStaticTransport(staticRoot)
+
+    await transport.start()
+
+    for (const path of ['/single-session-index.html', '/orca/single-session-index.html']) {
+      const response = await fetch(`http://127.0.0.1:${transport.resolvedPort}${path}`)
+      expect(response.status, path).toBe(200)
+      expect(response.headers.get('content-type')).toContain('text/html')
+      await expect(response.text()).resolves.toBe('<html>single</html>')
+    }
+  })
+
   it('does not expose arbitrary files from the static root', async () => {
     const staticRoot = mkdtempSync(join(tmpdir(), 'ws-transport-static-'))
     writeFileSync(join(staticRoot, 'package.json'), '{}')

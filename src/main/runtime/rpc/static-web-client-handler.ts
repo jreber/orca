@@ -113,8 +113,10 @@ function parseStaticPathname(rawUrl: string | undefined): string | null {
 }
 
 function mapProxyPrefixedStaticPathname(pathname: string): string {
-  if (pathname === '/web-index.html' || pathname.endsWith('/web-index.html')) {
-    return '/web-index.html'
+  for (const page of STATIC_WEB_ALLOWED_PATHS) {
+    if (pathname.endsWith(page)) {
+      return page
+    }
   }
   const prefixIndex = STATIC_WEB_ALLOWED_PREFIXES.reduce(
     (deepest, prefix) => Math.max(deepest, pathname.indexOf(prefix)),

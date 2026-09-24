@@ -185,6 +185,71 @@ describe('maybeAutoRenameBranchOnFirstWork', () => {
     }
   )
 
+  it('leaves a freshly created session with no turn alone, and names it from its first real prompt', async () => {
+    const { deps, setDisplayName } = makeDeps({
+      getFolderWorkspacePath: () => '/workspace/platform',
+      isPendingFirstAgentMessageRename: () => true
+    })
+    const items: AgentJournalRenderItem[] = []
+    let sequence = 0
+    const journal = {
+      snapshot: () => ({ items }),
+      lastActivityAt: () => 1,
+      isReadOnly: false,
+      cursor: () => ({ epoch: 1, sequence: (sequence += 1) })
+    } as unknown as AgentSessionJournal
+    const pending: Promise<void>[] = []
+    const statuses: unknown[] = []
+    const feed = new StructuredAgentSessionStatusFeed({
+      sessions: new Map([
+        [
+          'session',
+          {
+            journal,
+            params: {
+              location: {
+                executionHostId: 'local',
+                wslDistro: null,
+                workspaceId: FOLDER_WORKTREE_ID,
+                workspaceKind: 'folder'
+              },
+              provider: 'claude'
+            }
+          }
+        ]
+      ]),
+      getRecord: () => null,
+      now: () => 1,
+      onStatusChanged: (summary, options) => {
+        statuses.push(summary.status)
+        const work = maybeAutoRenameWorkspaceOnFirstStructuredTurn(summary, options, deps)
+        if (work) {
+          pending.push(work)
+        }
+      }
+    })
+    feed.publish('session', journal)
+    await Promise.all(pending)
+    expect(statuses).toEqual([null])
+    expect(generateBranchNameMock).not.toHaveBeenCalled()
+
+    items.push(
+      {
+        body: { kind: 'message', role: 'user', blocks: [{ type: 'text', text: 'Fix auth' }] }
+      } as AgentJournalRenderItem,
+      {
+        body: {
+          kind: 'status',
+          text: 'Working',
+          turnLifecycle: { turnId: 'turn-1', state: 'running' }
+        }
+      } as AgentJournalRenderItem
+    )
+    feed.publish('session', journal)
+    await Promise.all(pending)
+    expect(setDisplayName).toHaveBeenCalledWith(FOLDER_WORKTREE_ID, 'Fix auth')
+  })
+
   it('does not probe git for a folder-project structured session with a synthetic worktree id', async () => {
     const workspaceId = `${REPO_ID}::/workspace/platform::workspace:123e4567-e89b-12d3-a456-426614174000`
     const { deps, setDisplayName, setRenameError } = makeDeps({

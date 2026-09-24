@@ -2,7 +2,11 @@ import type { GlobalSettings } from './global-settings-types'
 import type { TuiAgent } from './tui-agent'
 
 /**
- * Whether the user replaced this agent's launch command with one only a terminal can run.
+ * Whether the user replaced this agent's launch command (a full terminal command line).
+ *
+ * In-app launches with such an override route to a terminal, so the whole line applies. Structured
+ * Claude sessions that exist anyway (created over `agentSession.create`, resumed, reopened) run it
+ * only when it is a single executable; see resolveClaudeCommandOverride in src/main/claude.
  *
  * Shared rather than renderer-local because both launch surfaces have to answer it: the renderer
  * routes such a launch back to the TUI, and orchestration falls a worker back to a PTY so the

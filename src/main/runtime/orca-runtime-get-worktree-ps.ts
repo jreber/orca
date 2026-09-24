@@ -24,6 +24,8 @@ import { claudeStructuredPermissionModeForSettings } from '../claude/claude-stru
 import { codexStructuredPermissionPolicyForSettings } from '../codex/codex-structured-permission-policy'
 import type { StructuredAgentSessionHandoffTransport } from '../native-chat/agent-session-wire/structured-agent-session-handoff-types'
 import { hostname } from 'node:os'
+import { resolveStructuredClaudeCommand } from '../claude/claude-command-override'
+import { resolveClaudeCommand } from '../codex-cli/command'
 import { claudeStructuredAuthPolicyForSettings } from '../claude-accounts/claude-structured-auth-policy'
 import { probeAgentSessionProcessIdentity } from './agent-session-process-identity-probe'
 import { structuredAgentSessionTabId } from '../../shared/structured-agent-session-projection'
@@ -152,6 +154,13 @@ export class OrcaRuntimeWithGetWorktreePs extends OrcaRuntimeWithStructuredAgent
         resolveTuiAgentLaunchEnv('codex', this.requireStore().getSettings().agentDefaultEnv),
       resolveClaudeLaunchEnv: () =>
         resolveTuiAgentLaunchEnv('claude', this.requireStore().getSettings().agentDefaultEnv),
+      // This host's Claude command override, when it is a single executable; re-read per launch
+      // like the neighbouring settings.
+      resolveClaudeCommand: () =>
+        resolveStructuredClaudeCommand(
+          this.requireStore().getSettings().agentCmdOverrides?.claude,
+          resolveClaudeCommand
+        ),
       resolveClaudeAuthPolicy: () =>
         claudeStructuredAuthPolicyForSettings(this.requireStore().getSettings()),
       // Re-read per acquisition, like the auth policy above it: the Agent Permissions setting is

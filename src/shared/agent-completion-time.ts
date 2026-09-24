@@ -41,3 +41,18 @@ export function agentEntryCompletionAt(entry: AgentCompletionSource): number | n
   }
   return Number.isFinite(entry.stateStartedAt) ? entry.stateStartedAt : null
 }
+
+/**
+ * A session-boundary `done` (a Claude/OpenCode SessionStart, a created-but-unprompted structured
+ * chat, a Grok shutdown) that did not displace a real completion: a connected, ready agent, not a
+ * finished turn. Every completion surface reads it as idle — not unread, not bold, no done dot.
+ * A boundary that displaced a real completion (e.g. `/clear` after a finished turn) is not ready:
+ * it still carries that completion.
+ */
+export function isReadySessionBoundary(entry: AgentCompletionSource): boolean {
+  return (
+    entry.state === 'done' &&
+    entry.sessionBoundary === true &&
+    agentEntryCompletionAt(entry) === null
+  )
+}

@@ -11,6 +11,10 @@ import {
   type AgentStatusEntry,
   type AgentStatusOrchestrationContext
 } from '../../../../shared/agent-status-types'
+import {
+  isReadySessionBoundary,
+  type AgentCompletionSource
+} from '../../../../shared/agent-completion-time'
 
 export type WorktreeAgentActivitySummary = {
   hasPermission: boolean
@@ -229,7 +233,7 @@ function agentStatusPaneIdsByTabIdEqual(
 
 function applyLiveAgentState(
   summary: WorktreeAgentActivitySummary,
-  entry: Pick<AgentStatusEntry, 'state' | 'workingMode' | 'interrupted'>
+  entry: Pick<AgentStatusEntry, 'workingMode'> & AgentCompletionSource
 ): void {
   if (entry.state === 'blocked' || entry.state === 'waiting') {
     summary.hasPermission = true
@@ -242,7 +246,8 @@ function applyLiveAgentState(
     } else {
       summary.hasLiveWorking = true
     }
-  } else if (entry.state === 'done') {
+  } else if (entry.state === 'done' && !isReadySessionBoundary(entry)) {
+    // Why: a ready session boundary is a connected agent, not a finished turn — no done dot.
     summary.hasLiveDone = true
   }
 }

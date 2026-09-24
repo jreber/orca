@@ -246,7 +246,7 @@ function AgentTargetMenuItem({
   onSend: (target: NotesSendAgentTarget) => void
 }): React.JSX.Element {
   const tabTitle = target.tabTitle.trim()
-  const state = agentRowDotState(agent?.state ?? 'idle', agent?.entry.workingMode)
+  const state = agentRowDotState(agent?.state ?? 'idle', agent?.entry)
   const timeAgo = agent ? formatAgentRelativeTime(agent, now) : null
   const disabledReason = target.status === 'disabled' ? target.disabledReason : undefined
   const secondaryParts = [

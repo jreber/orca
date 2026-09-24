@@ -29,6 +29,11 @@ function createRendererFixture() {
       assets: ['assets/logo.png']
     },
     'src/lazy.ts': { file: 'assets/lazy.js' },
+    'single-session-index.html': {
+      file: 'assets/single-session-entry.js',
+      isEntry: true,
+      imports: ['_web-shared.js']
+    },
     'index.html': { file: 'assets/desktop-entry.js', isEntry: true }
   }
 
@@ -42,6 +47,16 @@ function createRendererFixture() {
     root,
     'out/renderer/assets/web-entry.js',
     'import "./web-shared.js"; new Worker(new URL("editor.worker-fixture.js", import.meta.url));'
+  )
+  writeFixtureFile(
+    root,
+    'out/renderer/single-session-index.html',
+    '<script type="module" src="./assets/single-session-entry.js"></script>'
+  )
+  writeFixtureFile(
+    root,
+    'out/renderer/assets/single-session-entry.js',
+    'import "./web-shared.js"; export const single = true;'
   )
   writeFixtureFile(root, 'out/renderer/assets/web-shared.js', 'export const value = 1;')
   writeFixtureFile(root, 'out/renderer/assets/lazy.js', 'export const lazyValue = true;')
@@ -78,8 +93,10 @@ describe('renderer web client projection', () => {
     })
 
     expect(result.status, result.stderr).toBe(0)
-    expect(result.stdout).toContain('Projected web client: 7 files')
+    expect(result.stdout).toContain('Projected web client: 9 files')
     expect(existsSync(join(root, 'out/web/web-index.html'))).toBe(true)
+    expect(existsSync(join(root, 'out/web/single-session-index.html'))).toBe(true)
+    expect(existsSync(join(root, 'out/web/assets/single-session-entry.js'))).toBe(true)
     expect(existsSync(join(root, 'out/web/assets/editor.worker-fixture.js'))).toBe(true)
     expect(existsSync(join(root, 'out/web/assets/logo.png'))).toBe(true)
     expect(existsSync(join(root, 'out/web/assets/desktop-entry.js'))).toBe(false)
@@ -97,6 +114,28 @@ describe('renderer web client projection', () => {
 
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('Renderer manifest is missing entry: web-index.html')
+  })
+
+  it('fails when the renderer manifest omits the single-session embed entry', () => {
+    const root = createRendererFixture()
+    const manifestPath = join(root, 'out/renderer/.vite/manifest.json')
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    delete manifest['single-session-index.html']
+    writeFileSync(manifestPath, JSON.stringify(manifest))
+
+    const result = spawnSync(process.execPath, [scriptPath], {
+      cwd: root,
+      encoding: 'utf8'
+    })
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('Renderer manifest is missing entry: single-session-index.html')
+  })
+
+  it('builds the single-session embed page in the desktop renderer', () => {
+    const viteConfig = readFileSync(resolve('electron.vite.config.ts'), 'utf8')
+
+    expect(viteConfig).toContain("resolve('src/renderer/single-session-index.html')")
   })
 
   it('rejects renderer entries that execute another entry root', () => {

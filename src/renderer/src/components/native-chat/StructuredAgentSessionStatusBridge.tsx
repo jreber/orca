@@ -13,7 +13,7 @@ import {
 } from '../../../../shared/agent-status-types'
 import {
   structuredAgentSessionPaneKey,
-  structuredAgentSessionStatusState
+  structuredAgentSessionStatusRow
 } from '../../../../shared/structured-agent-session-projection'
 import { getRuntimeEnvironmentIdForWorktree } from '@/lib/worktree-runtime-owner'
 import { useAppStore } from '@/store'
@@ -103,17 +103,18 @@ function projectStatus(
 ): void {
   const paneKey = structuredAgentSessionPaneKey(tab.id, tab.entityId)
   const store = useAppStore.getState()
-  // No persisted turn yet (or nothing known): the row shows no agent status at all.
-  if (!summary?.status) {
+  // Nothing known: no agent status. A session with no turn yet still lists, as ready.
+  if (!summary) {
     if (store.agentStatusByPaneKey?.[paneKey]) {
       store.removeAgentStatus(paneKey)
     }
     return
   }
   const subagents = subagentSnapshotsFromTasks(summary.backgroundTasks)
+  // Shared with `worktree ps`, so the CLI and this row cannot disagree about one session.
+  const row = structuredAgentSessionStatusRow(summary.status)
   const desired = {
-    // Shared with `worktree ps`, so the CLI and this row cannot disagree about one session.
-    state: structuredAgentSessionStatusState(summary.status),
+    state: row.state,
     prompt: summary.latestPrompt,
     agentType: tab.agentSessionAgent,
     // The host projects these from the journal so the row reads like a hook-reported one:
@@ -123,7 +124,7 @@ function projectStatus(
     ...(summary.toolInput ? { toolInput: summary.toolInput } : {}),
     ...(summary.lastAssistantMessage ? { lastAssistantMessage: summary.lastAssistantMessage } : {}),
     ...(subagents ? { subagents, subagentObservation: observation } : {}),
-    sessionBoundary: false
+    sessionBoundary: row.sessionBoundary
   } as const
   const current = store.agentStatusByPaneKey?.[paneKey]
   if (

@@ -329,7 +329,10 @@ export const electronViteConfig: UserConfig = {
         input: {
           index: resolve('src/renderer/index.html'),
           popout: resolve('src/renderer/popout.html'),
-          web: resolve('src/renderer/web-index.html')
+          web: resolve('src/renderer/web-index.html'),
+          // Why: the chrome-free embed (e.g. the Obsidian plugin's webview) is served from
+          // out/web too; without it here, desktop builds 404 the page.
+          'single-session': resolve('src/renderer/single-session-index.html')
         }
       }
     }

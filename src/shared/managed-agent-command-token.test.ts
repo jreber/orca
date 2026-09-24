@@ -3,7 +3,8 @@ import {
   extractExecutableToken,
   hasPathSeparatorToken,
   isSafeExecutableBasename,
-  isSafeOverrideExecutableToken
+  isSafeOverrideExecutableToken,
+  splitExecutableToken
 } from './managed-agent-command-token'
 
 describe('managed agent command tokens', () => {
@@ -39,5 +40,20 @@ describe('managed agent command tokens', () => {
     expect(isSafeOverrideExecutableToken('../bin/codex')).toBe(false)
     expect(isSafeOverrideExecutableToken('/opt/codex;echo')).toBe(false)
     expect(isSafeOverrideExecutableToken('/opt/codex\0')).toBe(false)
+  })
+
+  it('splits the executable from whatever follows it', () => {
+    expect(splitExecutableToken('  "/opt/My Tools/claude"  ', { platform: 'linux' })).toEqual({
+      token: '/opt/My Tools/claude',
+      rest: ''
+    })
+    expect(splitExecutableToken('claude  --model opus ', { platform: 'linux' })).toEqual({
+      token: 'claude',
+      rest: '--model opus'
+    })
+    expect(
+      splitExecutableToken('"C:\\Program Files\\x\\claude.exe"', { platform: 'win32' })
+    ).toEqual({ token: 'C:\\Program Files\\x\\claude.exe', rest: '' })
+    expect(splitExecutableToken('   ')).toBeNull()
   })
 })
